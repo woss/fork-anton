@@ -176,7 +176,8 @@ class MindsQueryClient:
     def _ensure_conversation(self, client) -> str:
         """Get or create a dedicated conversation for anton queries.
 
-        Looks for an existing conversation with metadata.topic == "anton queries".
+        Looks for an existing conversation with metadata matching both
+        topic == "anton queries" AND model_name == self.mind_name.
         Creates one if not found. Returns the conversation ID.
         """
         r = client.get("/api/v1/conversations/")
@@ -187,13 +188,23 @@ class MindsQueryClient:
                 if not isinstance(c, dict):
                     continue
                 meta = c.get("metadata") or {}
-                if meta.get("topic") == "anton queries" and c.get("id"):
+                if (
+                    meta.get("topic") == "anton queries"
+                    and meta.get("model_name") == self.mind_name
+                    and c.get("id")
+                ):
                     return c["id"]
 
-        # Not found — create one
+        # Not found — create one (trailing slash required to avoid 307 redirect)
         r = client.post(
-            "/api/v1/conversations",
-            json={"metadata": {"topic": "anton queries"}},
+            "/api/v1/conversations/",
+            json={
+                "mind_name": self.mind_name,
+                "metadata": {
+                    "topic": "anton queries",
+                    "model_name": self.mind_name,
+                },
+            },
         )
         r.raise_for_status()
         new_conv = r.json()
@@ -205,7 +216,14 @@ class MindsQueryClient:
     # ── Query execution (private) ────────────────────────────────
 
     def _run_query_df(self, sql: str):
-        """Execute a SQL string via the Mind and return a DataFrame."""
+        """Execute a SQL string via the Mind and return a DataFrame.
+
+        Flow:
+        1. Ensure a dedicated conversation exists.
+        2. POST the query to /api/v1/responses/ (with conversation id).
+        3. Extract the assistant message id from the response output.
+        4. GET /api/v1/conversations/{conv}/items/{msg_id}/export → CSV → DataFrame.
+        """
         import threading
         import time
         from io import StringIO
@@ -246,40 +264,39 @@ class MindsQueryClient:
             resp = r.json()
 
             if self.progress_fn:
-                self.progress_fn("parsing results...")
+                self.progress_fn("fetching results...")
 
-            # Try structured query_result first
+            # The API returns chunked message items that all share the same
+            # assistant message id.  Extract that id and use /export to get
+            # the actual query data as CSV.
             output_items = resp.get("output") or []
+            message_id: str | None = None
             for item in output_items:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("type") == "query_result":
-                    cols = item.get("column_names") or []
-                    rows = item.get("data") or []
-                    return pd.DataFrame(rows, columns=cols)
+                if isinstance(item, dict) and item.get("type") == "message" and item.get("id"):
+                    message_id = item["id"]
+                    break
 
-            # Fallback: find a message with an id and try /export
-            for item in output_items:
-                if not isinstance(item, dict):
-                    continue
-                if item.get("type") == "message" and item.get("id"):
-                    try:
-                        export_r = client.get(
-                            f"/api/v1/conversations/{conv_id}/items/{item['id']}/export"
-                        )
-                        export_r.raise_for_status()
-                        return pd.read_csv(StringIO(export_r.text))
-                    except Exception:
-                        continue
+            if message_id:
+                export_r = client.get(
+                    f"/api/v1/conversations/{conv_id}/items/{message_id}/export"
+                )
+                export_r.raise_for_status()
+                csv_text = export_r.text.strip()
+                if csv_text:
+                    return pd.read_csv(StringIO(csv_text))
 
-            # Neither worked — raise with whatever text the Mind returned
+            # No exportable message — collect the text the Mind returned
+            # and raise so the caller can see what happened.
             texts = []
             for item in output_items:
-                if isinstance(item, dict):
-                    content = item.get("content") or item.get("text") or ""
-                    if content:
-                        texts.append(str(content))
-            detail = "; ".join(texts) if texts else str(resp)
+                if not isinstance(item, dict):
+                    continue
+                for block in item.get("content") or []:
+                    if isinstance(block, dict):
+                        t = block.get("text", "")
+                        if t and t.strip():
+                            texts.append(t)
+            detail = "".join(texts).strip() if texts else str(resp)
             raise RuntimeError(f"No query result in Mind response: {detail}")
 
     # ── Public: native queries ───────────────────────────────────
