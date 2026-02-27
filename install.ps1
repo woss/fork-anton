@@ -28,7 +28,41 @@ Write-Host "  █▀█ █ ▀█  █  █▄█ █ ▀█" -ForegroundColor 
 Write-Host "  autonomous coworker" -ForegroundColor Cyan
 Write-Host ""
 
-# ── 2. Check prerequisites ──────────────────────────────────────────
+# ── 2. Check execution policy ─────────────────────────────────────────
+$policy = Get-ExecutionPolicy -Scope CurrentUser
+if ($policy -eq "Restricted" -or $policy -eq "Undefined") {
+    $globalPolicy = Get-ExecutionPolicy -Scope LocalMachine
+    if ($globalPolicy -eq "Restricted" -or $globalPolicy -eq "Undefined") {
+        Write-Host "  PowerShell execution policy is too restrictive ($policy)." -ForegroundColor Yellow
+        Write-Host "  Anton needs 'RemoteSigned' to install and run scripts."
+        Write-Host ""
+        if (Confirm-Step "Set execution policy to RemoteSigned for current user?") {
+            try {
+                Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+                Write-Host "  Execution policy updated to RemoteSigned" -ForegroundColor Green
+            }
+            catch {
+                Write-Host "error: Could not set execution policy automatically." -ForegroundColor Red
+                Write-Host ""
+                Write-Host "  Please run this command manually, then re-run the installer:" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor Cyan
+                Write-Host ""
+                exit 1
+            }
+        }
+        else {
+            Write-Host ""
+            Write-Host "  To install Anton, you need to run this command first:" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor Cyan
+            Write-Host ""
+            exit 1
+        }
+    }
+}
+
+# ── 3. Check prerequisites ──────────────────────────────────────────
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "error: git is required but not found." -ForegroundColor Red
     Write-Host "  Install it with:  winget install Git.Git"
@@ -36,7 +70,7 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# ── 3. Find or install uv ──────────────────────────────────────────
+# ── 4. Find or install uv ──────────────────────────────────────────
 $uvCmd = Get-Command uv -ErrorAction SilentlyContinue
 $needUv = $false
 
@@ -86,7 +120,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# ── 4. Install anton via uv tool ───────────────────────────────────
+# ── 5. Install anton via uv tool ───────────────────────────────────
 Write-Host ""
 Write-Host "  This will install:"
 Write-Host "    - anton (from git+https://github.com/mindsdb/anton.git)"
@@ -104,7 +138,7 @@ else {
     exit 0
 }
 
-# ── 5. Verify the venv was created ─────────────────────────────────
+# ── 6. Verify the venv was created ─────────────────────────────────
 $uvToolDir = Join-Path $HOME ".local\share\uv\tools\anton"
 if (Test-Path $uvToolDir) {
     Write-Host "  Venv: $uvToolDir"
@@ -115,7 +149,7 @@ else {
     Write-Host "  Anton may still work — uv manages the environment internally."
 }
 
-# ── 6. Configure firewall for scratchpad internet access ──────────
+# ── 7. Configure firewall for scratchpad internet access ──────────
 #    Anton's scratchpads run Python in per-scratchpad venvs under
 #    ~/.anton/scratchpad-venvs/<name>/Scripts/python.exe.
 #    Windows Firewall blocks new executables by default, so we add a
@@ -181,7 +215,7 @@ else {
     Write-Host "    netsh advfirewall firewall add rule name=`"Anton Scratchpad`" dir=out action=allow program=`"$scratchpadVenvsDir\<name>\Scripts\python.exe`""
 }
 
-# ── 7. Ensure ~/.local/bin is in user PATH ──────────────────────────
+# ── 8. Ensure ~/.local/bin is in user PATH ──────────────────────────
 $uvBinDir = Join-Path $HOME ".local\bin"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 
@@ -200,7 +234,7 @@ else {
     Write-Host "  Added $uvBinDir to user PATH"
 }
 
-# ── 8. Success message ──────────────────────────────────────────────
+# ── 9. Success message ──────────────────────────────────────────────
 Write-Host ""
 Write-Host "  ✓ anton installed successfully!" -ForegroundColor Green
 Write-Host ""
