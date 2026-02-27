@@ -79,6 +79,23 @@ if _scratchpad_model:
                     )
                 ))
 
+            async def complete_async(self, *, system, messages, tools=None, tool_choice=None, max_tokens=4096):
+                """Call the LLM asynchronously. Returns an LLMResponse.
+
+                Use this inside async code (e.g. asyncio.gather) for concurrent
+                LLM calls.  Emits heartbeats automatically like complete().
+                """
+                return await _run_with_heartbeat(
+                    _llm_provider.complete(
+                        model=_llm_model,
+                        system=system,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                        max_tokens=max_tokens,
+                    )
+                )
+
             def generate_object(self, schema_class, *, system, messages, max_tokens=4096):
                 """Generate a structured object matching a Pydantic model.
 

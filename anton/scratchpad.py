@@ -14,6 +14,7 @@ from pathlib import Path
 
 _CELL_TIMEOUT_DEFAULT = 120        # Default total timeout when no estimate given
 _CELL_INACTIVITY_TIMEOUT = 30      # Max silence between output lines before killing
+_CELL_INACTIVITY_AFTER_PROGRESS = 60  # Grace window after a progress() call
 _INSTALL_TIMEOUT = 120
 _MAX_OUTPUT = 10_000
 _PROGRESS_MARKER = "__ANTON_PROGRESS__"
@@ -25,12 +26,12 @@ def _compute_timeouts(estimated_seconds: int) -> tuple[float, float]:
 
     - If estimate is 0: use defaults (120s total, 30s inactivity).
     - Otherwise: total = max(estimate * 2, estimate + 30) with no cap.
-      Inactivity = min(max(estimate * 0.5, 30), 60).
+      Inactivity = max(estimate * 0.5, 30) — no hard cap, scales with estimate.
     """
     if estimated_seconds <= 0:
         return float(_CELL_TIMEOUT_DEFAULT), float(_CELL_INACTIVITY_TIMEOUT)
     total = max(estimated_seconds * 2, estimated_seconds + 30)
-    inactivity = min(max(estimated_seconds * 0.5, 30), 60)
+    inactivity = max(estimated_seconds * 0.5, 30)
     return float(total), float(inactivity)
 
 
@@ -496,12 +497,17 @@ class Scratchpad:
             dict — the final JSON result (always the last item)
 
         Raises asyncio.TimeoutError with a descriptive message.
+
+        After a progress() call is received, the inactivity window is extended
+        to _CELL_INACTIVITY_AFTER_PROGRESS (60s) so that long-running work
+        that signals liveness isn't killed prematurely.
         """
         import time as _time
 
         lines: list[str] = []
         in_result = False
         start = _time.monotonic()
+        current_inactivity = inactivity_timeout
 
         while True:
             elapsed = _time.monotonic() - start
@@ -511,7 +517,7 @@ class Scratchpad:
                     f"Cell timed out after {total_timeout:.0f}s total"
                 )
 
-            line_timeout = min(inactivity_timeout, remaining_total)
+            line_timeout = min(current_inactivity, remaining_total)
             try:
                 raw = await asyncio.wait_for(
                     self._proc.stdout.readline(),  # type: ignore[union-attr]
@@ -525,7 +531,7 @@ class Scratchpad:
                         f"Cell timed out after {total_timeout:.0f}s total"
                     ) from None
                 raise asyncio.TimeoutError(
-                    f"Cell killed after {inactivity_timeout:.0f}s of inactivity "
+                    f"Cell killed after {current_inactivity:.0f}s of inactivity "
                     f"(no output or progress() calls)"
                 ) from None
 
@@ -535,8 +541,12 @@ class Scratchpad:
 
             line = raw.decode().rstrip("\r\n")
 
-            # Progress marker — yield to caller, don't store
+            # Progress marker — yield to caller, don't store.
+            # Extend inactivity window: the cell is actively working.
             if line.startswith(_PROGRESS_MARKER):
+                current_inactivity = max(
+                    current_inactivity, _CELL_INACTIVITY_AFTER_PROGRESS,
+                )
                 message = line[len(_PROGRESS_MARKER):].strip()
                 yield message
                 continue
