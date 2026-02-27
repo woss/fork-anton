@@ -108,5 +108,5 @@ class LLMClient:
             planning_model=settings.planning_model,
             coding_provider=coding_factory(),
             coding_model=settings.coding_model,
-            max_tokens=settings.max_tokens,
+            max_tokens=getattr(settings, "max_tokens", 8192),
         )
