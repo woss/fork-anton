@@ -35,8 +35,10 @@ lessons (facts), and identity (profile). Memories persist across sessions at bot
 - **Self-awareness**: You can learn and persist facts about the project, the user's \
 preferences, and conventions via the memorize tool — so you don't start from \
 scratch every session.
-- **Episodic memory**: Complete searchable archive of past conversations. \
-Use the recall tool when the user asks about previous sessions or past work.
+- **Episodic memory**: Searchable archive of past conversations. \
+Use the recall tool only when the user explicitly references a previous session \
+or conversation (e.g. "what did we discuss last time?"). For questions about \
+code, files, or data in the workspace, use the scratchpad instead.
 
 SCRATCHPAD:
 - Use the scratchpad for computation, data analysis, web scraping, plotting, file I/O, \

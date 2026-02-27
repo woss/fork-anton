@@ -17,11 +17,13 @@ class LLMClient:
         planning_model: str,
         coding_provider: LLMProvider,
         coding_model: str,
+        max_tokens: int = 8192,
     ) -> None:
         self._planning_provider = planning_provider
         self._planning_model = planning_model
         self._coding_provider = coding_provider
         self._coding_model = coding_model
+        self._max_tokens = max_tokens
 
     async def plan(
         self,
@@ -29,14 +31,14 @@ class LLMClient:
         system: str,
         messages: list[dict],
         tools: list[dict] | None = None,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         return await self._planning_provider.complete(
             model=self._planning_model,
             system=system,
             messages=messages,
             tools=tools,
-            max_tokens=max_tokens,
+            max_tokens=max_tokens or self._max_tokens,
         )
 
     async def plan_stream(
@@ -45,14 +47,14 @@ class LLMClient:
         system: str,
         messages: list[dict],
         tools: list[dict] | None = None,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[StreamEvent]:
         async for event in self._planning_provider.stream(
             model=self._planning_model,
             system=system,
             messages=messages,
             tools=tools,
-            max_tokens=max_tokens,
+            max_tokens=max_tokens or self._max_tokens,
         ):
             yield event
 
@@ -72,14 +74,14 @@ class LLMClient:
         system: str,
         messages: list[dict],
         tools: list[dict] | None = None,
-        max_tokens: int = 4096,
+        max_tokens: int | None = None,
     ) -> LLMResponse:
         return await self._coding_provider.complete(
             model=self._coding_model,
             system=system,
             messages=messages,
             tools=tools,
-            max_tokens=max_tokens,
+            max_tokens=max_tokens or self._max_tokens,
         )
 
     @classmethod
@@ -106,4 +108,5 @@ class LLMClient:
             planning_model=settings.planning_model,
             coding_provider=coding_factory(),
             coding_model=settings.coding_model,
+            max_tokens=settings.max_tokens,
         )

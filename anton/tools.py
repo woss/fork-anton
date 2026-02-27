@@ -114,10 +114,13 @@ MEMORIZE_TOOL = {
 RECALL_TOOL = {
     "name": "recall",
     "description": (
-        "Search your episodic memory — a complete archive of past conversations. "
-        "Use this when the user asks about previous sessions, past work, or anything "
-        "that happened in earlier conversations.\n\n"
-        "Returns timestamped episodes matching the query (newest first)."
+        "Search your episodic memory — an archive of past conversations. "
+        "ONLY use this when the user explicitly asks about a previous conversation "
+        "or session (e.g. 'what did we talk about last time?', 'remember when we...', "
+        "'have we discussed X before?'). Do NOT use this for questions about code, "
+        "files, or data in the workspace — use the scratchpad to explore those directly.\n\n"
+        "Returns timestamped episodes matching the query (newest first). "
+        "A single call is enough — do not call multiple times with different queries."
     ),
     "input_schema": {
         "type": "object",

@@ -723,6 +723,13 @@ class Scratchpad:
                 await self._proc.wait()
             except ProcessLookupError:
                 pass
+        # Close transport pipes to prevent "Event loop is closed" noise
+        # from __del__ during Python shutdown.
+        if self._proc is not None:
+            for attr in ("stdin", "stdout", "stderr"):
+                pipe = getattr(self._proc, attr, None)
+                if pipe and not pipe.is_closing() if hasattr(pipe, "is_closing") else False:
+                    pipe.close()
         self._proc = None
         if self._boot_path is not None:
             try:

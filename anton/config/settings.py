@@ -29,6 +29,8 @@ class AntonSettings(BaseSettings):
     coding_provider: str = "anthropic"
     coding_model: str = "claude-haiku-4-5-20251001"
 
+    max_tokens: int = 8192  # max output tokens per LLM call
+
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     openai_base_url: str | None = None
