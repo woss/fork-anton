@@ -60,7 +60,7 @@ information and scrape the web as needed, assuming no API keys are available.
 
 You can always ask Anton to explain what it did. Ask it to dump its scratchpad and you get a full notebook-style breakdown: every cell of code it ran, the outputs, and errors — so you can follow its reasoning step by step.
 
----
+
 ## How it works
 
 For the full architecture of Anton, file formats, and developer guide, see **[anton/README.md](anton/README.md)**.
