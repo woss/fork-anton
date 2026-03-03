@@ -5,7 +5,7 @@ In 2015, after reading *How to Create a Mind* by Ray Kurzweil, I became convince
 I tried. I failed — but I learned something important: one fundamental piece was missing. I called it the **Anticipation Block Architecture**. You can read about it [here](https://torrmal.github.io/2015/12/29/anticipation-loop/).
 
 It turns out the world went on to build something remarkably similar: transformers and now, in 2026, LLMs have matured to the point where the ideas seeded by *How to Create a Mind* are no longer just philosophical — they’re implementable.
-And here we are: time to try again and thus, here's **Anton** — a brain-inspired architecture of agents.
+And here we are: Like an adrenaline junkie eyeing at a bungee looking for another fix, trying again: Meet **Anton**.
 
 ## A mini Mind
 
