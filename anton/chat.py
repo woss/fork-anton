@@ -1378,7 +1378,8 @@ async def _handle_setup_minds(
     console.print()
 
     return _rebuild_session(
-        settings, state, self_awareness, cortex, workspace, console, episodic=episodic,
+        settings=settings, state=state, self_awareness=self_awareness,
+        cortex=cortex, workspace=workspace, console=console, episodic=episodic,
     )
 
 
