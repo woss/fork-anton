@@ -987,15 +987,14 @@ async def _handle_setup(
     console.print("[anton.cyan]/setup[/]")
     console.print()
     console.print("  What do you want to configure?")
-    console.print("    [bold]1[/]  Models — provider, API key, planning & coding models")
+    console.print("    [bold]1[/]  Datasource — connect to datasource via Minds")
     console.print("    [bold]2[/]  Memory — memory mode and episodic memory")
-    console.print("    [bold]3[/]  Minds — connect to a Minds datasource")
     console.print("    [bold]q[/]  Back")
     console.print()
 
     top_choice = Prompt.ask(
         "Select",
-        choices=["1", "2", "3", "q"],
+        choices=["1", "2", "q"],
         default="q",
         console=console,
     )
@@ -1004,12 +1003,6 @@ async def _handle_setup(
         console.print()
         return session
     elif top_choice == "1":
-        return await _handle_setup_models(
-            console, settings, workspace, state,
-            self_awareness, cortex, session, episodic=episodic,
-            history_store=history_store, session_id=session_id,
-        )
-    elif top_choice == "3":
         return await _handle_setup_minds(
             console, settings, workspace, state,
             self_awareness, cortex, session, episodic=episodic,
@@ -1270,33 +1263,14 @@ async def _handle_setup_minds(
 
     # Show current config
     if settings.minds_datasource:
-        masked_key = ("***" + settings.minds_api_key[-4:]) if settings.minds_api_key and len(settings.minds_api_key) > 4 else "(not set)"
-        console.print(f"  API key:     [bold]{masked_key}[/]")
         console.print(f"  URL:         [bold]{settings.minds_url}[/]")
         console.print(f"  Datasource:  [bold]{settings.minds_datasource}[/]")
         console.print(f"  Engine:      [bold]{settings.minds_datasource_engine or 'unknown'}[/]")
-        console.print(f"  SSL verify:  [bold]{settings.minds_ssl_verify}[/]")
         console.print()
 
-    # --- API key ---
-    current_key = settings.minds_api_key or ""
-    key_prompt = "Minds API key"
-    if current_key:
-        key_prompt += " [dim](Enter to keep existing)[/]"
-    api_key = Prompt.ask(key_prompt, default=current_key, console=console, password=True)
-    api_key = api_key.strip()
-    if not api_key:
-        console.print("[anton.warning]API key is required.[/]")
-        console.print()
-        return session
-
-    # --- URL ---
-    minds_url = Prompt.ask(
-        "Minds URL",
-        default=settings.minds_url,
-        console=console,
-    )
-    minds_url = _normalize_minds_url(minds_url)
+    # Use defaults — no prompts for key or URL
+    api_key = settings.minds_api_key or ""
+    minds_url = _normalize_minds_url(settings.minds_url)
 
     # --- Test connection ---
     ssl_verify = settings.minds_ssl_verify
