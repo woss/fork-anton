@@ -234,6 +234,49 @@ def _ensure_api_key(settings) -> None:
 
     ws = Workspace(Path.home())
 
+    if settings.minds_enabled:
+        _ensure_minds_api_key(settings, ws)
+    else:
+        _ensure_anthropic_api_key(settings, ws)
+
+    # Reload env vars into the process so the scratchpad subprocess inherits them
+    ws.apply_env_to_process()
+
+    console.print()
+    console.print(f"[anton.success]Saved to {ws.env_path}[/]")
+    console.print()
+
+
+def _ensure_anthropic_api_key(settings, ws) -> None:
+    """Prompt for Anthropic API key (default flow)."""
+    from rich.prompt import Prompt
+
+    console.print()
+    console.print("[anton.cyan]Anthropic configuration[/]")
+    console.print()
+
+    api_key = Prompt.ask("Anthropic API key", console=console)
+    if not api_key.strip():
+        console.print("[anton.error]No API key provided. Exiting.[/]")
+        raise typer.Exit(1)
+    api_key = api_key.strip()
+
+    settings.anthropic_api_key = api_key
+    settings.planning_provider = "anthropic"
+    settings.coding_provider = "anthropic"
+    settings.planning_model = "claude-sonnet-4-6"
+    settings.coding_model = "claude-haiku-4-5-20251001"
+    ws.set_secret("ANTON_ANTHROPIC_API_KEY", api_key)
+    ws.set_secret("ANTON_PLANNING_PROVIDER", "anthropic")
+    ws.set_secret("ANTON_CODING_PROVIDER", "anthropic")
+    ws.set_secret("ANTON_PLANNING_MODEL", "claude-sonnet-4-6")
+    ws.set_secret("ANTON_CODING_MODEL", "claude-haiku-4-5-20251001")
+
+
+def _ensure_minds_api_key(settings, ws) -> None:
+    """Prompt for Minds API key and configure LLM endpoints (opt-in flow)."""
+    from rich.prompt import Prompt
+
     console.print()
     console.print("[anton.cyan]Minds configuration[/]")
     console.print()
@@ -266,7 +309,6 @@ def _ensure_api_key(settings) -> None:
     from anton.chat import _minds_test_llm
     llm_ok = _minds_test_llm(minds_url, api_key, verify=True)
     if not llm_ok:
-        # Retry without SSL verification
         llm_ok = _minds_test_llm(minds_url, api_key, verify=False)
 
     if llm_ok:
@@ -285,29 +327,8 @@ def _ensure_api_key(settings) -> None:
         ws.set_secret("ANTON_PLANNING_MODEL", "_reason_")
         ws.set_secret("ANTON_CODING_MODEL", "_code_")
     else:
-        console.print("[anton.warning]LLM endpoints not available on this server.[/]")
-        anthropic_key = Prompt.ask("Anthropic API key (required for LLM)", console=console)
-        if not anthropic_key.strip():
-            console.print("[anton.error]No API key provided. Exiting.[/]")
-            raise typer.Exit(1)
-        anthropic_key = anthropic_key.strip()
-        settings.anthropic_api_key = anthropic_key
-        settings.planning_provider = "anthropic"
-        settings.coding_provider = "anthropic"
-        settings.planning_model = "claude-sonnet-4-6"
-        settings.coding_model = "claude-haiku-4-5-20251001"
-        ws.set_secret("ANTON_ANTHROPIC_API_KEY", anthropic_key)
-        ws.set_secret("ANTON_PLANNING_PROVIDER", "anthropic")
-        ws.set_secret("ANTON_CODING_PROVIDER", "anthropic")
-        ws.set_secret("ANTON_PLANNING_MODEL", "claude-sonnet-4-6")
-        ws.set_secret("ANTON_CODING_MODEL", "claude-haiku-4-5-20251001")
-
-    # Reload env vars into the process so the scratchpad subprocess inherits them
-    ws.apply_env_to_process()
-
-    console.print()
-    console.print(f"[anton.success]Saved to {ws.env_path}[/]")
-    console.print()
+        console.print("[anton.warning]LLM endpoints not available — falling back to Anthropic.[/]")
+        _ensure_anthropic_api_key(settings, ws)
 
 
 @app.command("setup")
