@@ -23,6 +23,7 @@ class _ToolActivity:
     description: str = ""
     current_progress: str = ""
     step_count: int = 0
+    eta_str: str = ""
 
 
 _TOOL_LABELS: dict[str, str] = {
@@ -97,6 +98,15 @@ TOOL_MESSAGES = [
     "Dispatching the task...",
     "Engaging autopilot...",
     "Letting the tools cook...",
+]
+
+ANALYZING_MESSAGES = [
+    "Analyzing results...",
+    "Reading the output...",
+    "Digesting the results...",
+    "Making sense of the output...",
+    "Processing results...",
+    "Reviewing the output...",
 ]
 
 CANCEL_MESSAGES = [
@@ -227,6 +237,23 @@ class StreamDisplay:
         if self._live is None:
             return
 
+        # Tools finished, LLM is now analyzing — update spinner text
+        if phase == "analyzing":
+            self._thinking_msg = random.choice(ANALYZING_MESSAGES)  # noqa: S311
+            self._refresh_live()
+            return
+
+        # Scratchpad is about to start — set description + ETA immediately
+        if phase == "scratchpad_start" and self._activities:
+            for act in reversed(self._activities):
+                if act.name == "scratchpad":
+                    act.description = _tool_display_text(act.name, "".join(act.json_parts)) or f"Scratchpad({message})"
+                    if eta:
+                        act.eta_str = f"~{int(eta)}s"
+                    break
+            self._refresh_live()
+            return
+
         # For scratchpad streaming, show progress on the activity line itself
         if phase == "scratchpad" and self._activities:
             for act in reversed(self._activities):
@@ -304,6 +331,8 @@ class StreamDisplay:
             else:
                 lines.append("  ")
             lines.append(label, style="bold")
+            if act.eta_str and not final:
+                lines.append(f" {act.eta_str}", style="anton.muted")
             if act.current_progress:
                 lines.append(f" \u2190 {act.current_progress}", style="anton.muted")
             lines.append("\n")

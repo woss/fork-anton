@@ -167,24 +167,15 @@ def _ensure_workspace(settings) -> None:
     local_ws = Workspace(local_path)
     global_ws = Workspace(global_path)
 
-    # 1. Local .anton exists → use it
-    if local_ws.is_initialized():
-        # Local env wins, then global fills in anything missing (API keys, etc.)
-        local_ws.apply_env_to_process()
-        if local_path != global_path and global_ws.is_initialized():
-            global_ws.apply_env_to_process()
-        return
+    # Always ensure local .anton exists so project memory has a home
+    if not local_ws.is_initialized():
+        local_ws.initialize()
+        console.print(f"[anton.muted]  workspace is {local_path}/.anton[/]")
 
-    # 2. Global ~/.anton exists and we're not already pointing at $HOME → use it
-    if local_path != global_path and global_ws.is_initialized():
-        settings.resolve_workspace(str(global_path))
-        global_ws.apply_env_to_process()
-        return
-
-    # 3. Neither exists → create local workspace automatically
-    local_ws.initialize()
+    # Local env wins, then global fills in anything missing (API keys, etc.)
     local_ws.apply_env_to_process()
-    console.print(f"[anton.muted]  workspace is {local_path}/.anton[/]")
+    if local_path != global_path and global_ws.is_initialized():
+        global_ws.apply_env_to_process()
 
 
 @app.callback(invoke_without_command=True)
@@ -243,6 +234,49 @@ def _ensure_api_key(settings) -> None:
 
     ws = Workspace(Path.home())
 
+    if settings.minds_enabled:
+        _ensure_minds_api_key(settings, ws)
+    else:
+        _ensure_anthropic_api_key(settings, ws)
+
+    # Reload env vars into the process so the scratchpad subprocess inherits them
+    ws.apply_env_to_process()
+
+    console.print()
+    console.print(f"[anton.success]Saved to {ws.env_path}[/]")
+    console.print()
+
+
+def _ensure_anthropic_api_key(settings, ws) -> None:
+    """Prompt for Anthropic API key (default flow)."""
+    from rich.prompt import Prompt
+
+    console.print()
+    console.print("[anton.cyan]Anthropic configuration[/]")
+    console.print()
+
+    api_key = Prompt.ask("Anthropic API key", console=console)
+    if not api_key.strip():
+        console.print("[anton.error]No API key provided. Exiting.[/]")
+        raise typer.Exit(1)
+    api_key = api_key.strip()
+
+    settings.anthropic_api_key = api_key
+    settings.planning_provider = "anthropic"
+    settings.coding_provider = "anthropic"
+    settings.planning_model = "claude-sonnet-4-6"
+    settings.coding_model = "claude-haiku-4-5-20251001"
+    ws.set_secret("ANTON_ANTHROPIC_API_KEY", api_key)
+    ws.set_secret("ANTON_PLANNING_PROVIDER", "anthropic")
+    ws.set_secret("ANTON_CODING_PROVIDER", "anthropic")
+    ws.set_secret("ANTON_PLANNING_MODEL", "claude-sonnet-4-6")
+    ws.set_secret("ANTON_CODING_MODEL", "claude-haiku-4-5-20251001")
+
+
+def _ensure_minds_api_key(settings, ws) -> None:
+    """Prompt for Minds API key and configure LLM endpoints (opt-in flow)."""
+    from rich.prompt import Prompt
+
     console.print()
     console.print("[anton.cyan]Minds configuration[/]")
     console.print()
@@ -258,33 +292,43 @@ def _ensure_api_key(settings) -> None:
         default="https://mdb.ai",
         console=console,
     ).strip()
+    if not minds_url.startswith("http://") and not minds_url.startswith("https://"):
+        minds_url = "https://" + minds_url
+    minds_url = minds_url.rstrip("/")
 
-    base_url = f"{minds_url.rstrip('/')}/api/v1"
-
-    settings.openai_api_key = api_key
-    settings.openai_base_url = base_url
-    settings.planning_provider = "openai-compatible"
-    settings.coding_provider = "openai-compatible"
-    settings.planning_model = "_reason_"
-    settings.coding_model = "_code_"
+    # Store Minds credentials
     settings.minds_api_key = api_key
     settings.minds_url = minds_url
-
-    ws.set_secret("ANTON_OPENAI_API_KEY", api_key)
-    ws.set_secret("ANTON_OPENAI_BASE_URL", base_url)
-    ws.set_secret("ANTON_PLANNING_PROVIDER", "openai-compatible")
-    ws.set_secret("ANTON_CODING_PROVIDER", "openai-compatible")
-    ws.set_secret("ANTON_PLANNING_MODEL", "_reason_")
-    ws.set_secret("ANTON_CODING_MODEL", "_code_")
     ws.set_secret("ANTON_MINDS_API_KEY", api_key)
     ws.set_secret("ANTON_MINDS_URL", minds_url)
 
-    # Reload env vars into the process so the scratchpad subprocess inherits them
-    ws.apply_env_to_process()
+    # Test if the Minds server supports LLM endpoints (_code_/_reason_)
+    console.print()
+    console.print("[anton.muted]Testing LLM endpoints on Minds server...[/]")
 
-    console.print()
-    console.print(f"[anton.success]Saved to {ws.env_path}[/]")
-    console.print()
+    from anton.chat import _minds_test_llm
+    llm_ok = _minds_test_llm(minds_url, api_key, verify=True)
+    if not llm_ok:
+        llm_ok = _minds_test_llm(minds_url, api_key, verify=False)
+
+    if llm_ok:
+        console.print("[anton.success]LLM endpoints available — using Minds server as LLM provider.[/]")
+        base_url = f"{minds_url}/api/v1"
+        settings.openai_api_key = api_key
+        settings.openai_base_url = base_url
+        settings.planning_provider = "openai-compatible"
+        settings.coding_provider = "openai-compatible"
+        settings.planning_model = "_reason_"
+        settings.coding_model = "_code_"
+        ws.set_secret("ANTON_OPENAI_API_KEY", api_key)
+        ws.set_secret("ANTON_OPENAI_BASE_URL", base_url)
+        ws.set_secret("ANTON_PLANNING_PROVIDER", "openai-compatible")
+        ws.set_secret("ANTON_CODING_PROVIDER", "openai-compatible")
+        ws.set_secret("ANTON_PLANNING_MODEL", "_reason_")
+        ws.set_secret("ANTON_CODING_MODEL", "_code_")
+    else:
+        console.print("[anton.warning]LLM endpoints not available — falling back to Anthropic.[/]")
+        _ensure_anthropic_api_key(settings, ws)
 
 
 @app.command("setup")

@@ -49,8 +49,10 @@ class AntonSettings(BaseSettings):
     disable_autoupdates: bool = False
 
     # Minds datasource integration
+    minds_enabled: bool = False  # opt-in: use Minds server as LLM provider
     minds_api_key: str | None = None
     minds_url: str = "https://mdb.ai"
+    minds_mind_name: str | None = None
     minds_datasource: str | None = None
     minds_datasource_engine: str | None = None
     minds_ssl_verify: bool = True

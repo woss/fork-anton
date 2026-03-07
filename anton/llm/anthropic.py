@@ -56,6 +56,14 @@ class AnthropicProvider(LLMProvider):
             if "prompt is too long" in msg or "context limit" in msg:
                 raise ContextOverflowError(str(exc)) from exc
             raise
+        except anthropic.APIStatusError as exc:
+            raise ConnectionError(
+                f"Server returned {exc.status_code} — the LLM endpoint may be temporarily unavailable. Try again in a moment."
+            ) from exc
+        except anthropic.APIConnectionError as exc:
+            raise ConnectionError(
+                "Could not reach the LLM server — check your connection or try again in a moment."
+            ) from exc
 
         content_text = ""
         tool_calls: list[ToolCall] = []
@@ -155,6 +163,14 @@ class AnthropicProvider(LLMProvider):
             if "prompt is too long" in msg or "context limit" in msg:
                 raise ContextOverflowError(str(exc)) from exc
             raise
+        except anthropic.APIStatusError as exc:
+            raise ConnectionError(
+                f"Server returned {exc.status_code} — the LLM endpoint may be temporarily unavailable. Try again in a moment."
+            ) from exc
+        except anthropic.APIConnectionError as exc:
+            raise ConnectionError(
+                "Could not reach the LLM server — check your connection or try again in a moment."
+            ) from exc
 
         yield StreamComplete(
             response=LLMResponse(

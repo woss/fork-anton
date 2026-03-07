@@ -149,13 +149,13 @@ class ChatSession:
         if self._history_store and self._session_id:
             self._history_store.save(self._session_id, self._history)
 
-    def _build_system_prompt(self) -> str:
+    async def _build_system_prompt(self, user_message: str = "") -> str:
         prompt = CHAT_SYSTEM_PROMPT.format(
             runtime_context=self._runtime_context,
         )
         # Inject memory context (replaces old self_awareness)
         if self._cortex is not None:
-            memory_section = self._cortex.build_memory_context()
+            memory_section = await self._cortex.build_memory_context(user_message)
             if memory_section:
                 prompt += memory_section
         elif self._self_awareness is not None:
@@ -331,7 +331,8 @@ class ChatSession:
     async def turn(self, user_input: str | list[dict]) -> str:
         self._history.append({"role": "user", "content": user_input})
 
-        system = self._build_system_prompt()
+        user_msg_str = user_input if isinstance(user_input, str) else ""
+        system = await self._build_system_prompt(user_msg_str)
         tools = self._build_tools()
 
         try:
@@ -434,6 +435,11 @@ class ChatSession:
         # Text-only response
         reply = response.content or ""
         self._history.append({"role": "assistant", "content": reply})
+
+        # Periodic memory vacuum (Systems Consolidation)
+        if self._cortex is not None and self._cortex.mode != "off":
+            self._cortex.maybe_vacuum()
+
         return reply
 
     async def turn_stream(self, user_input: str | list[dict]) -> AsyncIterator[StreamEvent]:
@@ -445,8 +451,9 @@ class ChatSession:
             content = user_input if isinstance(user_input, str) else str(user_input)[:2000]
             self._episodic.log_turn(self._turn_count + 1, "user", content)
 
+        user_msg_str = user_input if isinstance(user_input, str) else ""
         assistant_text_parts: list[str] = []
-        async for event in self._stream_and_handle_tools():
+        async for event in self._stream_and_handle_tools(user_msg_str):
             if isinstance(event, StreamTextDelta):
                 assistant_text_parts.append(event.text)
             yield event
@@ -460,17 +467,15 @@ class ChatSession:
         # Identity extraction (Default Mode Network — every 5 turns)
         self._turn_count += 1
         self._persist_history()
-        if (
-            self._turn_count % 5 == 0
-            and self._cortex is not None
-            and self._cortex.mode != "off"
-            and isinstance(user_input, str)
-        ):
-            asyncio.create_task(self._cortex.maybe_update_identity(user_input))
+        if self._cortex is not None and self._cortex.mode != "off":
+            if self._turn_count % 5 == 0 and isinstance(user_input, str):
+                asyncio.create_task(self._cortex.maybe_update_identity(user_input))
+            # Periodic memory vacuum (Systems Consolidation)
+            self._cortex.maybe_vacuum()
 
-    async def _stream_and_handle_tools(self) -> AsyncIterator[StreamEvent]:
+    async def _stream_and_handle_tools(self, user_message: str = "") -> AsyncIterator[StreamEvent]:
         """Stream one LLM call, handle tool loops, yield all events."""
-        system = self._build_system_prompt()
+        system = await self._build_system_prompt(user_message)
         tools = self._build_tools()
 
         response: StreamComplete | None = None
@@ -568,6 +573,12 @@ class ChatSession:
                             result_text = prep
                         else:
                             pad, code, description, estimated_time, estimated_seconds = prep
+                            # Signal intent + ETA before execution begins
+                            yield StreamTaskProgress(
+                                phase="scratchpad_start",
+                                message=description or "Running code",
+                                eta_seconds=estimated_seconds,
+                            )
                             from anton.scratchpad import Cell
                             cell = None
                             async for item in pad.execute_streaming(
@@ -622,6 +633,9 @@ class ChatSession:
                 })
 
             self._history.append({"role": "user", "content": tool_results})
+
+            # Signal that tools are done and LLM is now analyzing
+            yield StreamTaskProgress(phase="analyzing", message="Analyzing results...")
 
             # Stream follow-up
             response = None
@@ -739,20 +753,26 @@ def _build_runtime_context(settings: AntonSettings) -> str:
         f"- Workspace: {settings.workspace_path}\n"
         f"- Memory mode: {settings.memory_mode}"
     )
-    if settings.minds_datasource and settings.minds_api_key:
+    if settings.minds_api_key and (settings.minds_mind_name or settings.minds_datasource):
         engine = settings.minds_datasource_engine or "unknown"
+        ctx += f"\n\n**CONNECTED MIND (Minds):**\n"
+        if settings.minds_mind_name:
+            ctx += f"- Mind: {settings.minds_mind_name}\n"
+        if settings.minds_datasource:
+            ctx += (
+                f"- Datasource: {settings.minds_datasource}\n"
+                f"- Engine: {engine}\n"
+            )
         ctx += (
-            f"\n\n**CONNECTED DATASOURCE (Minds):**\n"
-            f"- Datasource: {settings.minds_datasource}\n"
-            f"- Engine: {engine}\n"
             f"- Minds URL: {settings.minds_url}\n"
             f"- To query data, use the scratchpad with the built-in `query_minds_data()` function.\n"
             f"  It is pre-loaded in the scratchpad namespace — DO NOT import it. Just call it directly.\n"
             f'  Example: result = query_minds_data("SELECT * FROM users LIMIT 5")\n'
             f"  Returns dict with 'type', 'data' (list of rows), 'column_names', 'error_message'.\n"
             f'  Optional: query_minds_data("SELECT ...", datasource="other_ds")\n'
-            f"- Write SQL appropriate for the {engine} engine."
         )
+        if settings.minds_datasource:
+            ctx += f"- Write SQL appropriate for the {engine} engine.\n"
     return ctx
 
 
@@ -777,6 +797,9 @@ def _rebuild_session(
     if cortex is not None:
         cortex._llm = state["llm_client"]
         cortex.mode = settings.memory_mode
+
+    # Refresh mind knowledge from remote server
+    _minds_refresh_knowledge(settings, cortex)
 
     runtime_context = _build_runtime_context(settings)
     api_key = (
@@ -824,35 +847,42 @@ def _handle_memory(
         console.print()
         return
 
-    # --- Project scope ---
-    project_hc = cortex.project_hc
-    p_identity = project_hc.recall_identity()
-    p_rules = project_hc.recall_rules()
-    p_lessons_raw = project_hc._read_full_lessons()
-    p_rule_count = sum(1 for ln in p_rules.splitlines() if ln.strip().startswith("- ")) if p_rules else 0
-    p_lesson_count = sum(1 for ln in p_lessons_raw.splitlines() if ln.strip().startswith("- ")) if p_lessons_raw else 0
-    p_topics: list[str] = []
-    if project_hc._topics_dir.is_dir():
-        p_topics = [p.stem for p in sorted(project_hc._topics_dir.iterdir()) if p.suffix == ".md"]
+    # --- Helper to display a hippocampus scope ---
+    def _show_scope(label: str, hc) -> int:
+        identity = hc.recall_identity()
+        rules = hc.recall_rules()
+        lessons_raw = hc._read_full_lessons()
+        rule_count = sum(1 for ln in rules.splitlines() if ln.strip().startswith("- ")) if rules else 0
+        lesson_count = sum(1 for ln in lessons_raw.splitlines() if ln.strip().startswith("- ")) if lessons_raw else 0
+        topics: list[str] = []
+        if hc._topics_dir.is_dir():
+            topics = [p.stem for p in sorted(hc._topics_dir.iterdir()) if p.suffix == ".md"]
 
-    console.print(f"  [anton.cyan]Memory[/] [dim]({project_hc._dir})[/]")
-    if p_identity:
-        entries = [ln.strip()[2:] for ln in p_identity.splitlines() if ln.strip().startswith("- ")]
-        if entries:
-            console.print(f"    Identity:  {', '.join(entries[:3])}" + (" ..." if len(entries) > 3 else ""))
+        console.print(f"  [anton.cyan]{label}[/] [dim]({hc._dir})[/]")
+        if identity:
+            entries = [ln.strip()[2:] for ln in identity.splitlines() if ln.strip().startswith("- ")]
+            if entries:
+                console.print(f"    Identity:  {', '.join(entries[:3])}" + (" ..." if len(entries) > 3 else ""))
+            else:
+                console.print("    Identity:  [dim](set)[/]")
         else:
-            console.print("    Identity:  [dim](set)[/]")
-    else:
-        console.print("    Identity:  [dim](empty)[/]")
-    console.print(f"    Rules:     {p_rule_count}")
-    console.print(f"    Lessons:   {p_lesson_count}")
-    if p_topics:
-        console.print(f"    Topics:    {', '.join(p_topics)}")
-    else:
-        console.print("    Topics:    [dim](none)[/]")
-    console.print()
+            console.print("    Identity:  [dim](empty)[/]")
+        console.print(f"    Rules:     {rule_count}")
+        console.print(f"    Lessons:   {lesson_count}")
+        if topics:
+            console.print(f"    Topics:    {', '.join(topics)}")
+        else:
+            console.print("    Topics:    [dim](none)[/]")
+        console.print()
+        return rule_count + lesson_count
 
-    total = p_rule_count + p_lesson_count
+    # --- Global scope ---
+    global_total = _show_scope("Global Memory", cortex.global_hc)
+
+    # --- Project scope ---
+    project_total = _show_scope("Project Memory", cortex.project_hc)
+
+    total = global_total + project_total
     console.print(f"  Total entries: [bold]{total}[/]")
     if cortex.needs_compaction():
         console.print("  [anton.warning]Compaction needed (>50 entries in a scope)[/]")
@@ -988,7 +1018,7 @@ async def _handle_setup(
     console.print("[anton.cyan]/setup[/]")
     console.print()
     console.print("  What do you want to configure?")
-    console.print("    [bold]1[/]  Datasource — connect to datasource via Minds")
+    console.print("    [bold]1[/]  LLM — provider, API key, and models")
     console.print("    [bold]2[/]  Memory — memory mode and episodic memory")
     console.print("    [bold]q[/]  Back")
     console.print()
@@ -1004,9 +1034,10 @@ async def _handle_setup(
         console.print()
         return session
     elif top_choice == "1":
-        return await _handle_setup_minds(
+        return await _handle_setup_models(
             console, settings, workspace, state,
             self_awareness, cortex, session, episodic=episodic,
+            history_store=history_store, session_id=session_id,
         )
     else:
         _handle_setup_memory(console, settings, workspace, cortex, episodic=episodic)
@@ -1212,6 +1243,88 @@ def _normalize_minds_url(url: str) -> str:
     return url.rstrip("/")
 
 
+def _minds_list_minds(base_url: str, api_key: str, verify: bool = True) -> list[dict]:
+    """Fetch minds list from a Minds server using stdlib urllib."""
+    import json as _json
+    import ssl
+    import urllib.request
+
+    url = f"{base_url}/api/v1/minds/"  # trailing slash required
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    req.add_header("Accept", "application/json")
+    req.add_header("User-Agent", "anton/1.0")
+
+    ctx = None
+    if not verify:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+        data = _json.loads(resp.read().decode())
+
+    if isinstance(data, list):
+        return data
+    return data.get("minds", data if isinstance(data, list) else [])
+
+
+def _minds_get_mind(base_url: str, api_key: str, mind_name: str, verify: bool = True) -> dict | None:
+    """Fetch a single mind's details from a Minds server."""
+    import json as _json
+    import ssl
+    import urllib.request
+
+    url = f"{base_url}/api/v1/minds/{mind_name}"
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    req.add_header("Accept", "application/json")
+    req.add_header("User-Agent", "anton/1.0")
+
+    ctx = None
+    if not verify:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as resp:
+            return _json.loads(resp.read().decode())
+    except Exception:
+        return None
+
+
+def _minds_refresh_knowledge(settings: AntonSettings, cortex) -> None:
+    """Fetch the configured mind's parameters and update the memory topic file."""
+    if not settings.minds_api_key or not settings.minds_mind_name or cortex is None:
+        return
+
+    mind = _minds_get_mind(
+        _normalize_minds_url(settings.minds_url),
+        settings.minds_api_key,
+        settings.minds_mind_name,
+        verify=settings.minds_ssl_verify,
+    )
+    if not mind:
+        return
+
+    params = mind.get("parameters", {}) or {}
+    parts = []
+    if params.get("system_prompt"):
+        parts.append(params["system_prompt"])
+    if params.get("prompt_template"):
+        parts.append(params["prompt_template"])
+
+    if not parts:
+        return
+
+    knowledge = "\n\n".join(parts)
+    topic_content = f"# Minds — {settings.minds_mind_name}\n\n{knowledge}\n"
+    topic_path = cortex.project_hc._topics_dir / "minds-datasource.md"
+    cortex.project_hc._topics_dir.mkdir(parents=True, exist_ok=True)
+    cortex.project_hc._encode_with_lock(topic_path, topic_content, mode="write")
+
+
 def _minds_list_datasources(base_url: str, api_key: str, verify: bool = True) -> list[dict]:
     """Fetch datasource list from a Minds server using stdlib urllib."""
     import json as _json
@@ -1222,6 +1335,7 @@ def _minds_list_datasources(base_url: str, api_key: str, verify: bool = True) ->
     req = urllib.request.Request(url, method="GET")
     req.add_header("Authorization", f"Bearer {api_key}")
     req.add_header("Accept", "application/json")
+    req.add_header("User-Agent", "anton/1.0")
 
     ctx = None
     if not verify:
@@ -1238,7 +1352,39 @@ def _minds_list_datasources(base_url: str, api_key: str, verify: bool = True) ->
     return data.get("datasources", data if isinstance(data, list) else [])
 
 
-async def _handle_setup_minds(
+def _minds_test_llm(base_url: str, api_key: str, verify: bool = True) -> bool:
+    """Test if the Minds server supports LLM endpoints (_code_/_reason_ models)."""
+    import json as _json
+    import ssl
+    import urllib.request
+
+    url = f"{base_url}/api/v1/chat/completions"
+    payload = _json.dumps({
+        "model": "_code_",
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+    }).encode()
+
+    req = urllib.request.Request(url, data=payload, method="POST")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Accept", "application/json")
+    req.add_header("User-Agent", "anton/1.0")
+
+    ctx = None
+    if not verify:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+async def _handle_connect(
     console: Console,
     settings: AntonSettings,
     workspace: Workspace,
@@ -1248,7 +1394,7 @@ async def _handle_setup_minds(
     session: ChatSession,
     episodic: EpisodicMemory | None = None,
 ) -> ChatSession:
-    """Setup sub-menu: connect to a Minds datasource."""
+    """Connect to a Minds server: select a Mind, then optionally a datasource."""
     import ssl
     import urllib.error
 
@@ -1260,90 +1406,191 @@ async def _handle_setup_minds(
 
     console.print()
 
-    # Use key and URL from settings (already configured in _ensure_api_key)
-    api_key = settings.minds_api_key or ""
-    minds_url = _normalize_minds_url(settings.minds_url)
+    # --- Prompt for URL and API key (use saved values as defaults) ---
+    saved_url = _normalize_minds_url(settings.minds_url)
+    minds_url = Prompt.ask("Minds server URL", default=saved_url, console=console)
+    minds_url = _normalize_minds_url(minds_url)
 
-    # --- Test connection ---
+    saved_key = settings.minds_api_key or ""
+    default_key = saved_key if saved_key else None
+    api_key = Prompt.ask("API key", default=default_key, console=console, password=True)
+    if not api_key or not api_key.strip():
+        console.print("[anton.error]API key is required.[/]")
+        console.print()
+        return session
+    api_key = api_key.strip()
+
     ssl_verify = settings.minds_ssl_verify
-    console.print()
-    console.print(f"[anton.muted]Connecting to {minds_url}...[/]")
 
-    datasources = None
-    try:
-        datasources = _minds_list_datasources(minds_url, api_key, verify=ssl_verify)
-    except urllib.error.URLError as e:
-        if isinstance(e.reason, ssl.SSLCertVerificationError):
-            console.print("[anton.warning]This server uses a self-signed or untrusted certificate.[/]")
-            trust = Prompt.ask(
-                "Trust this certificate anyway? (y/n)",
-                choices=["y", "n"],
-                default="n",
-                console=console,
-            )
-            if trust == "y":
-                ssl_verify = False
-                try:
-                    datasources = _minds_list_datasources(minds_url, api_key, verify=False)
-                except Exception as retry_err:
-                    console.print(f"[anton.error]Connection failed: {retry_err}[/]")
+    # --- Try to connect (with retry on auth/SSL failure) ---
+    minds = None
+    max_attempts = 3
+    for _attempt in range(max_attempts):
+        console.print()
+        console.print(f"[anton.muted]Connecting to {minds_url}...[/]")
+        try:
+            minds = _minds_list_minds(minds_url, api_key, verify=ssl_verify)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                console.print("[anton.error]Authentication failed — check your URL and API key.[/]")
+                if _attempt >= max_attempts - 1:
+                    console.print("[anton.muted]Too many failed attempts. Aborted.[/]")
                     console.print()
                     return session
-            else:
+                minds_url = Prompt.ask("Minds server URL", default=minds_url, console=console)
+                minds_url = _normalize_minds_url(minds_url)
+                api_key = Prompt.ask("API key", console=console, password=True)
+                if not api_key or not api_key.strip():
+                    console.print("[anton.muted]Aborted.[/]")
+                    console.print()
+                    return session
+                api_key = api_key.strip()
+                continue
+            console.print(f"[anton.error]Connection failed (HTTP {e.code}): {e.reason}[/]")
+            console.print()
+            return session
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError):
+                console.print("[anton.warning]This server uses a self-signed or untrusted certificate.[/]")
+                trust = Prompt.ask(
+                    "Trust this certificate anyway? (y/n)",
+                    choices=["y", "n"],
+                    default="n",
+                    console=console,
+                )
+                if trust == "y":
+                    ssl_verify = False
+                    continue
                 console.print("[anton.muted]Aborted.[/]")
                 console.print()
                 return session
-        else:
             console.print(f"[anton.error]Connection failed: {e}[/]")
             console.print()
             return session
-    except Exception as e:
-        console.print(f"[anton.error]Connection failed: {e}[/]")
+        except Exception as e:
+            console.print(f"[anton.error]Connection failed: {e}[/]")
+            console.print()
+            return session
+
+    if not minds:
+        console.print("[anton.warning]No minds found on this server.[/]")
         console.print()
         return session
 
-    if not datasources:
-        console.print("[anton.warning]No datasources found on this server.[/]")
+    # --- Select a Mind ---
+    console.print()
+    console.print("[anton.cyan]Available minds:[/]")
+    for i, mind in enumerate(minds, 1):
+        name = mind.get("name", "?")
+        ds_list = mind.get("datasources", [])
+        ds_count = len(ds_list)
+        ds_label = f"{ds_count} datasource{'s' if ds_count != 1 else ''}" if ds_count else "no datasources"
+        console.print(f"    [bold]{i}[/]  {name} [dim]({ds_label})[/]")
+    console.print()
+
+    choices = [str(i) for i in range(1, len(minds) + 1)]
+    pick = Prompt.ask("Select mind", choices=choices, console=console)
+    selected_mind = minds[int(pick) - 1]
+    mind_name = selected_mind.get("name", "")
+
+    # --- Datasource selection within the mind ---
+    mind_datasources = selected_mind.get("datasources", [])
+    ds_name = ""
+    ds_engine = ""
+
+    if len(mind_datasources) > 1:
         console.print()
-        return session
+        console.print(f"[anton.cyan]Datasources in mind '{mind_name}':[/]")
+        for i, ds_ref in enumerate(mind_datasources, 1):
+            # datasource refs may be strings or dicts
+            ref_name = ds_ref if isinstance(ds_ref, str) else ds_ref.get("name", "?")
+            console.print(f"    [bold]{i}[/]  {ref_name}")
+        console.print()
+        ds_choices = [str(i) for i in range(1, len(mind_datasources) + 1)]
+        ds_pick = Prompt.ask("Select datasource", choices=ds_choices, console=console)
+        picked_ds = mind_datasources[int(ds_pick) - 1]
+        ds_name = picked_ds if isinstance(picked_ds, str) else picked_ds.get("name", "")
+    elif len(mind_datasources) == 1:
+        picked_ds = mind_datasources[0]
+        ds_name = picked_ds if isinstance(picked_ds, str) else picked_ds.get("name", "")
+        console.print(f"[anton.muted]Auto-selected datasource: {ds_name}[/]")
 
-    # --- Display datasources ---
-    console.print()
-    console.print("[anton.cyan]Available datasources:[/]")
-    for i, ds in enumerate(datasources, 1):
-        name = ds.get("name", "?")
-        engine = ds.get("engine", "unknown")
-        console.print(f"    [bold]{i}[/]  {name} [dim]({engine})[/]")
-    console.print()
-
-    choices = [str(i) for i in range(1, len(datasources) + 1)]
-    pick = Prompt.ask(
-        "Select datasource",
-        choices=choices,
-        console=console,
-    )
-    selected = datasources[int(pick) - 1]
-    ds_name = selected.get("name", "")
-    ds_engine = selected.get("engine", "unknown")
+    # --- Resolve engine type from datasources list ---
+    if ds_name:
+        try:
+            all_datasources = _minds_list_datasources(minds_url, api_key, verify=ssl_verify)
+            for ds in all_datasources:
+                if ds.get("name") == ds_name:
+                    ds_engine = ds.get("engine", "unknown")
+                    break
+        except Exception:
+            ds_engine = "unknown"
 
     # --- Persist to global ~/.anton/.env ---
     global_ws.set_secret("ANTON_MINDS_API_KEY", api_key)
     global_ws.set_secret("ANTON_MINDS_URL", minds_url)
+    global_ws.set_secret("ANTON_MINDS_MIND_NAME", mind_name)
     global_ws.set_secret("ANTON_MINDS_DATASOURCE", ds_name)
     global_ws.set_secret("ANTON_MINDS_DATASOURCE_ENGINE", ds_engine)
     global_ws.set_secret("ANTON_MINDS_SSL_VERIFY", "true" if ssl_verify else "false")
 
-    # Reload env vars into the process so the scratchpad subprocess inherits them
-    global_ws.apply_env_to_process()
-
     settings.minds_api_key = api_key
     settings.minds_url = minds_url
+    settings.minds_mind_name = mind_name
     settings.minds_datasource = ds_name
     settings.minds_datasource_engine = ds_engine
     settings.minds_ssl_verify = ssl_verify
 
     console.print()
-    console.print(f"[anton.success]Connected to datasource: {ds_name} ({ds_engine})[/]")
+    status = f"[anton.success]Selected mind: {mind_name}[/]"
+    if ds_name:
+        status += f" [anton.success]| datasource: {ds_name} ({ds_engine})[/]"
+    console.print(status)
+
+    # --- Test if the Minds server also supports LLM endpoints ---
+    console.print()
+    console.print("[anton.muted]Testing LLM endpoints on this server...[/]")
+    llm_ok = _minds_test_llm(minds_url, api_key, verify=ssl_verify)
+
+    if llm_ok:
+        console.print("[anton.success]LLM endpoints available — using Minds server as LLM provider.[/]")
+        base_url = f"{minds_url.rstrip('/')}/api/v1"
+        settings.openai_api_key = api_key
+        settings.openai_base_url = base_url
+        settings.planning_provider = "openai-compatible"
+        settings.coding_provider = "openai-compatible"
+        settings.planning_model = "_reason_"
+        settings.coding_model = "_code_"
+        global_ws.set_secret("ANTON_OPENAI_API_KEY", api_key)
+        global_ws.set_secret("ANTON_OPENAI_BASE_URL", base_url)
+        global_ws.set_secret("ANTON_PLANNING_PROVIDER", "openai-compatible")
+        global_ws.set_secret("ANTON_CODING_PROVIDER", "openai-compatible")
+        global_ws.set_secret("ANTON_PLANNING_MODEL", "_reason_")
+        global_ws.set_secret("ANTON_CODING_MODEL", "_code_")
+    else:
+        console.print("[anton.warning]LLM endpoints not available on this server.[/]")
+        # Check if Anthropic key is already configured
+        has_anthropic = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        if not has_anthropic:
+            anthropic_key = Prompt.ask("Anthropic API key (for LLM)", console=console)
+            if anthropic_key.strip():
+                anthropic_key = anthropic_key.strip()
+                settings.anthropic_api_key = anthropic_key
+                settings.planning_provider = "anthropic"
+                settings.coding_provider = "anthropic"
+                settings.planning_model = "claude-sonnet-4-6"
+                settings.coding_model = "claude-haiku-4-5-20251001"
+                global_ws.set_secret("ANTON_ANTHROPIC_API_KEY", anthropic_key)
+                global_ws.set_secret("ANTON_PLANNING_PROVIDER", "anthropic")
+                global_ws.set_secret("ANTON_CODING_PROVIDER", "anthropic")
+                global_ws.set_secret("ANTON_PLANNING_MODEL", "claude-sonnet-4-6")
+                global_ws.set_secret("ANTON_CODING_MODEL", "claude-haiku-4-5-20251001")
+                console.print("[anton.success]Anthropic API key saved.[/]")
+            else:
+                console.print("[anton.warning]No API key provided — LLM calls will not work.[/]")
+
+    global_ws.apply_env_to_process()
     console.print()
 
     return _rebuild_session(
@@ -1502,6 +1749,7 @@ def _print_slash_help(console: Console) -> None:
     """Print available slash commands."""
     console.print()
     console.print("[anton.cyan]Available commands:[/]")
+    console.print("  [bold]/connect[/]     — Connect to a Minds server and select a mind")
     console.print("  [bold]/setup[/]       — Configure models or memory settings")
     console.print("  [bold]/memory[/]      — Show memory status dashboard")
     console.print("  [bold]/paste[/]       — Attach clipboard image to your message")
@@ -1813,7 +2061,14 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
             if message_content is None and stripped.startswith("/"):
                 parts = stripped.split(maxsplit=1)
                 cmd = parts[0].lower()
-                if cmd == "/setup":
+                if cmd == "/connect":
+                    session = await _handle_connect(
+                        console, settings, workspace, state,
+                        self_awareness, cortex, session,
+                        episodic=episodic,
+                    )
+                    continue
+                elif cmd == "/setup":
                     session = await _handle_setup(
                         console, settings, workspace, state,
                         self_awareness, cortex, session,

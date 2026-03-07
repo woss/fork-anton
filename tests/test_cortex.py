@@ -25,35 +25,35 @@ def cortex(dirs):
 
 
 class TestBuildMemoryContext:
-    def test_empty_returns_empty(self, cortex):
-        assert cortex.build_memory_context() == ""
+    async def test_empty_returns_empty(self, cortex):
+        assert await cortex.build_memory_context() == ""
 
-    def test_includes_identity(self, cortex, dirs):
+    async def test_includes_identity(self, cortex, dirs):
         g, _ = dirs
         Hippocampus(g).rewrite_identity(["Name: Jorge", "TZ: PST"])
-        result = cortex.build_memory_context()
+        result = await cortex.build_memory_context()
         assert "Identity" in result
         assert "Name: Jorge" in result
 
-    def test_includes_global_rules(self, cortex, dirs):
+    async def test_includes_global_rules(self, cortex, dirs):
         g, _ = dirs
         Hippocampus(g).encode_rule("Use httpx", kind="always", confidence="high", source="user")
-        result = cortex.build_memory_context()
+        result = await cortex.build_memory_context()
         assert "Global Rules" in result
         assert "Use httpx" in result
 
-    def test_includes_project_rules(self, cortex, dirs):
+    async def test_includes_project_rules(self, cortex, dirs):
         _, p = dirs
         Hippocampus(p).encode_rule("Use Django ORM", kind="always", confidence="high", source="user")
-        result = cortex.build_memory_context()
+        result = await cortex.build_memory_context()
         assert "Project Rules" in result
         assert "Use Django ORM" in result
 
-    def test_includes_lessons(self, cortex, dirs):
+    async def test_includes_lessons(self, cortex, dirs):
         g, p = dirs
         Hippocampus(g).encode_lesson("Global fact")
         Hippocampus(p).encode_lesson("Project fact")
-        result = cortex.build_memory_context()
+        result = await cortex.build_memory_context()
         assert "Global Lessons" in result
         assert "Project Lessons" in result
         assert "Global fact" in result

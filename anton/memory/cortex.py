@@ -90,20 +90,25 @@ class Cortex:
         self._llm = llm_client
         self._turn_count = 0
 
-    def build_memory_context(self) -> str:
+    # ~6000 chars ≈ ~1500 tokens — above this, use LLM to filter rules
+    _RULES_BUDGET_CHARS = 6000
+
+    _RULES_RETRIEVAL_PROMPT = """\
+Given the user's current message, select only the rules that are relevant.
+Return the selected rules exactly as they appear, one per line (keep the "- " prefix).
+If all rules are relevant, return them all. If none are relevant, return "NONE".
+Do NOT add, modify, or summarize rules — return them verbatim.
+"""
+
+    async def build_memory_context(self, user_message: str = "") -> str:
         """Assemble memories for the system prompt — the 'working memory' load.
 
         Like the dlPFC performing strategic retrieval: selects what enters
         the context window based on relevance and budget.
 
-        Retrieval order (mirrors neural priority):
-          1. Identity (profile) — always loaded, ~300 tokens
-          2. Global rules — behavioral constraints, ~1500 tokens
-          3. Project rules — scope-specific constraints, ~1500 tokens
-          4. Global lessons — semantic knowledge, ~1000 tokens
-          5. Project lessons — scope-specific facts, ~1000 tokens
-
-        Total budget: ~5800 tokens (~3% of 200K context).
+        Args:
+            user_message: Current user message for cue-dependent retrieval.
+                When rules exceed the token budget, only relevant rules are loaded.
         """
         sections: list[str] = []
 
@@ -112,15 +117,19 @@ class Cortex:
         if identity:
             sections.append(f"## Your Memory — Identity\n{identity}")
 
-        # 2. Global rules
+        # 2. Global rules (with smart retrieval)
         global_rules = self.global_hc.recall_rules()
         if global_rules:
-            sections.append(f"## Your Memory — Global Rules\n{global_rules}")
+            global_rules = await self._retrieve_relevant_rules(global_rules, user_message)
+            if global_rules:
+                sections.append(f"## Your Memory — Global Rules\n{global_rules}")
 
-        # 3. Project rules
+        # 3. Project rules (with smart retrieval)
         project_rules = self.project_hc.recall_rules()
         if project_rules:
-            sections.append(f"## Your Memory — Project Rules\n{project_rules}")
+            project_rules = await self._retrieve_relevant_rules(project_rules, user_message)
+            if project_rules:
+                sections.append(f"## Your Memory — Project Rules\n{project_rules}")
 
         # 4. Global lessons
         global_lessons = self.global_hc.recall_lessons(token_budget=1000)
@@ -132,10 +141,48 @@ class Cortex:
         if project_lessons:
             sections.append(f"## Your Memory — Project Lessons\n{project_lessons}")
 
+        # 6. Minds datasource context (auto-loaded if present)
+        minds_topic = self.project_hc.recall_topic("minds-datasource")
+        if minds_topic:
+            sections.append(f"## Minds — Datasource Context\n{minds_topic}")
+
         if not sections:
             return ""
 
         return "\n\n" + "\n\n".join(sections)
+
+    async def _retrieve_relevant_rules(self, all_rules: str, user_message: str) -> str:
+        """Filter rules to only those relevant to the current user message.
+
+        Brain analog: dlPFC cue-dependent recall — the prefrontal cortex
+        selects which memories to activate based on current goals, rather
+        than loading everything into working memory.
+
+        If rules are under budget or no LLM is available, returns as-is.
+        """
+        if not user_message or self._llm is None:
+            return all_rules
+        if len(all_rules) <= self._RULES_BUDGET_CHARS:
+            return all_rules
+
+        try:
+            response = await self._llm.code(
+                system=self._RULES_RETRIEVAL_PROMPT,
+                messages=[{
+                    "role": "user",
+                    "content": f"User message: {user_message}\n\nRules:\n{all_rules}",
+                }],
+                max_tokens=4096,
+            )
+            result = response.content.strip()
+            if result == "NONE":
+                return ""
+            # Only use the filtered result if it's non-empty
+            if result:
+                return result
+        except Exception:
+            pass
+        return all_rules
 
     def get_scratchpad_context(self) -> str:
         """Retrieve procedural knowledge for scratchpad tool injection.
@@ -222,7 +269,8 @@ class Cortex:
 
     # --- Compaction: Systems Consolidation + Synaptic Homeostasis ---
 
-    _COMPACTION_THRESHOLD = 50  # entries before compaction triggers
+    _COMPACTION_THRESHOLD = 20  # entries before compaction triggers
+    _VACUUM_INTERVAL = 10  # check compaction every N turns
 
     def needs_compaction(self) -> bool:
         """Check if memory files have grown beyond the compaction threshold.
@@ -250,6 +298,33 @@ class Cortex:
                 await self._compact_file(hc, hc._lessons_path, "lesson")
                 await self._compact_file(hc, hc._rules_path, "rules")
 
+    async def vacuum(self) -> None:
+        """Run compaction unconditionally on all memory files.
+
+        Public entry point for on-demand cleanup (e.g. after /connect).
+        Unlike compact_all(), skips the threshold check — always runs.
+        """
+        if self._llm is None:
+            return
+        for hc in (self.global_hc, self.project_hc):
+            await self._compact_file(hc, hc._lessons_path, "lesson")
+            await self._compact_file(hc, hc._rules_path, "rules")
+
+    def maybe_vacuum(self) -> None:
+        """Periodic vacuum check — call after each assistant turn.
+
+        Every _VACUUM_INTERVAL turns, checks if compaction is needed and
+        fires it in the background if so.
+        """
+        import asyncio
+
+        self._turn_count += 1
+        if self._turn_count % self._VACUUM_INTERVAL != 0:
+            return
+        if not self.needs_compaction():
+            return
+        asyncio.create_task(self.compact_all())
+
     async def _compact_file(self, hc: Hippocampus, path: Path, kind: str) -> None:
         """Compact a single memory file using LLM-assisted deduplication."""
         if not path.is_file():
@@ -258,7 +333,7 @@ class Cortex:
         content = path.read_text(encoding="utf-8")
         entries = [ln.strip() for ln in content.splitlines() if ln.strip().startswith("- ")]
 
-        if len(entries) < 20:
+        if len(entries) < 8:
             return
 
         try:

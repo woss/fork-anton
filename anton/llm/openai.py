@@ -202,6 +202,14 @@ class OpenAIProvider(LLMProvider):
             if "context_length_exceeded" in msg or "maximum context length" in msg:
                 raise ContextOverflowError(str(exc)) from exc
             raise
+        except openai.APIStatusError as exc:
+            raise ConnectionError(
+                f"Server returned {exc.status_code} — the LLM endpoint may be temporarily unavailable. Try again in a moment."
+            ) from exc
+        except openai.APIConnectionError as exc:
+            raise ConnectionError(
+                "Could not reach the LLM server — check your connection or try again in a moment."
+            ) from exc
 
         choice = response.choices[0]
         message = choice.message
@@ -318,6 +326,14 @@ class OpenAIProvider(LLMProvider):
             if "context_length_exceeded" in msg or "maximum context length" in msg:
                 raise ContextOverflowError(str(exc)) from exc
             raise
+        except openai.APIStatusError as exc:
+            raise ConnectionError(
+                f"Server returned {exc.status_code} — the LLM endpoint may be temporarily unavailable. Try again in a moment."
+            ) from exc
+        except openai.APIConnectionError as exc:
+            raise ConnectionError(
+                "Could not reach the LLM server — check your connection or try again in a moment."
+            ) from exc
 
         # Finalize tool calls
         for idx in sorted(tc_state):
