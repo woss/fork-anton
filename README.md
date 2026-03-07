@@ -92,20 +92,6 @@ Configure memory via `/setup` > Memory, or set environment variables:
 Use `/memory` to view a read-only dashboard of both memory systems.
 
 
-## Manual install
-
-If you already have [uv](https://docs.astral.sh/uv/):
-```
-uv tool install git+https://github.com/mindsdb/anton.git
-```
-
-## Upgrade / Uninstall
-
-```
-uv tool upgrade anton
-uv tool uninstall anton
-```
-
 ### Prerequisites
 
 - **git** — required ([macOS](https://git-scm.com/downloads/mac) / `sudo apt install git` / `winget install Git.Git`)
@@ -123,8 +109,8 @@ netsh advfirewall firewall add rule name="Anton Scratchpad" dir=out action=allow
 
 ## How is Anton different from Claude Code / Codex?
 
-Anton is a *doing* tool not a coding tool. Tools like Claude-Code exist for your codebase — they read your repo, edit your files etc. The code they write *is* the focus.
-Anton on the other hand, doesn't care or needs a coding repo. Yes, it writes code too, but that code is a means to an end, which is why we introduced the scratchpad logic, so Anton can fetch a page, parse a table, plot a chart, call an API, crunch some numbers, ... whatever it needs to solve a problem. The output is the answer, not the source file.
+Anton is a *doing* tool not a coding tool. Tools like Claude-Code exist for your codebase. The code they write *is* the focus.
+Anton on the other hand, doesn't care. Yes, it writes code too, but that code is a means to an end... Anton does whatever it needs to solve a problem you give it to solve. The output is the answers and insights you want, not the source files.
 
 If you're coding a commercial app, use a coding agent. If you need something *done* — a dataset analyzed, a report generated, a workflow automated — talk to Anton.
 
