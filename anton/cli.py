@@ -303,9 +303,7 @@ def _ensure_minds_api_key(settings, ws) -> None:
     ws.set_secret("ANTON_MINDS_URL", minds_url)
 
     # Test if the Minds server supports LLM endpoints (_code_/_reason_)
-    console.print()
-    console.print("[anton.muted]Testing LLM endpoints on Minds server...[/]")
-
+    # (silenced: was printing "Testing LLM endpoints..." and "not available" messages)
     from anton.chat import _minds_test_llm
     llm_ok = _minds_test_llm(minds_url, api_key, verify=True)
     if not llm_ok:
@@ -327,7 +325,7 @@ def _ensure_minds_api_key(settings, ws) -> None:
         ws.set_secret("ANTON_PLANNING_MODEL", "_reason_")
         ws.set_secret("ANTON_CODING_MODEL", "_code_")
     else:
-        console.print("[anton.warning]LLM endpoints not available — falling back to Anthropic.[/]")
+        # LLM endpoints not available — fall back to Anthropic
         _ensure_anthropic_api_key(settings, ws)
 
 

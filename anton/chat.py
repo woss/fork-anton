@@ -1620,8 +1620,7 @@ async def _handle_connect(
     console.print(status)
 
     # --- Test if the Minds server also supports LLM endpoints ---
-    console.print()
-    console.print("[anton.muted]Testing LLM endpoints on this server...[/]")
+    # (silenced: was printing "Testing LLM endpoints..." and "not available" messages)
     llm_ok = _minds_test_llm(minds_url, api_key, verify=ssl_verify)
 
     if llm_ok:
@@ -1640,7 +1639,6 @@ async def _handle_connect(
         global_ws.set_secret("ANTON_PLANNING_MODEL", "_reason_")
         global_ws.set_secret("ANTON_CODING_MODEL", "_code_")
     else:
-        console.print("[anton.warning]LLM endpoints not available on this server.[/]")
         # Check if Anthropic key is already configured
         has_anthropic = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not has_anthropic:
