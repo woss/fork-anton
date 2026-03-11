@@ -478,6 +478,11 @@ class ChatSession:
         system = await self._build_system_prompt(user_message)
         tools = self._build_tools()
 
+        # Guard against summarizing an already-summarized history within the same
+        # turn (e.g. ContextOverflowError on first call + pressure > threshold on
+        # the tool-loop follow-up would previously produce a summary of a summary).
+        _compacted_this_turn = False
+
         response: StreamComplete | None = None
 
         try:
@@ -492,6 +497,7 @@ class ChatSession:
         except ContextOverflowError:
             await self._summarize_history()
             self._compact_scratchpads()
+            _compacted_this_turn = True
             yield StreamContextCompacted(
                 message="Context was getting long — older history has been summarized."
             )
@@ -510,9 +516,10 @@ class ChatSession:
         llm_response = response.response
 
         # Proactive compaction
-        if llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
+        if not _compacted_this_turn and llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
             await self._summarize_history()
             self._compact_scratchpads()
+            _compacted_this_turn = True
             yield StreamContextCompacted(
                 message="Context was getting long — older history has been summarized."
             )
@@ -649,8 +656,10 @@ class ChatSession:
                     if isinstance(event, StreamComplete):
                         response = event
             except ContextOverflowError:
-                await self._summarize_history()
-                self._compact_scratchpads()
+                if not _compacted_this_turn:
+                    await self._summarize_history()
+                    self._compact_scratchpads()
+                    _compacted_this_turn = True
                 yield StreamContextCompacted(
                     message="Context was getting long — older history has been summarized."
                 )
@@ -668,9 +677,10 @@ class ChatSession:
             llm_response = response.response
 
             # Proactive compaction during tool loop
-            if llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
+            if not _compacted_this_turn and llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
                 await self._summarize_history()
                 self._compact_scratchpads()
+                _compacted_this_turn = True
                 yield StreamContextCompacted(
                     message="Context was getting long — older history has been summarized."
                 )
