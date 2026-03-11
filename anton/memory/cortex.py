@@ -94,8 +94,8 @@ class Cortex:
     _RULES_BUDGET_CHARS = 6000
 
     _RULES_RETRIEVAL_PROMPT = """\
-Given the user's current message, select only the rules that are relevant.
-Return the selected rules exactly as they appear, one per line (keep the "- " prefix).
+Given the user's current message, select only the conditional (When/If) rules that are \
+relevant. Return the selected rules exactly as they appear, one per line (keep the "- " prefix).
 If all rules are relevant, return them all. If none are relevant, return "NONE".
 Do NOT add, modify, or summarize rules — return them verbatim.
 """
@@ -158,6 +158,8 @@ Do NOT add, modify, or summarize rules — return them verbatim.
         selects which memories to activate based on current goals, rather
         than loading everything into working memory.
 
+        Always/Never rules are behavioral constraints — always loaded in full.
+        Only conditional (When/If) rules are filtered by relevance.
         If rules are under budget or no LLM is available, returns as-is.
         """
         if not user_message or self._llm is None:
@@ -165,24 +167,61 @@ Do NOT add, modify, or summarize rules — return them verbatim.
         if len(all_rules) <= self._RULES_BUDGET_CHARS:
             return all_rules
 
+        # Split rules into mandatory (Always/Never) and filterable (When)
+        lines = all_rules.splitlines()
+        mandatory_lines: list[str] = []
+        when_lines: list[str] = []
+        current_section = ""
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("## Always"):
+                current_section = "always"
+                mandatory_lines.append(line)
+            elif stripped.startswith("## Never"):
+                current_section = "never"
+                mandatory_lines.append(line)
+            elif stripped.startswith("## When"):
+                current_section = "when"
+                mandatory_lines.append(line)  # keep the header
+            elif stripped.startswith("## ") or stripped.startswith("# "):
+                current_section = ""
+                mandatory_lines.append(line)
+            elif current_section == "when":
+                when_lines.append(line)
+            else:
+                mandatory_lines.append(line)
+
+        # If When section is small, no need to filter
+        when_text = "\n".join(when_lines).strip()
+        if not when_text or len(when_text) < 1000:
+            return all_rules
+
+        # Filter only the When rules
         try:
             response = await self._llm.code(
                 system=self._RULES_RETRIEVAL_PROMPT,
                 messages=[{
                     "role": "user",
-                    "content": f"User message: {user_message}\n\nRules:\n{all_rules}",
+                    "content": f"User message: {user_message}\n\nRules:\n{when_text}",
                 }],
                 max_tokens=4096,
             )
             result = response.content.strip()
             if result == "NONE":
-                return ""
-            # Only use the filtered result if it's non-empty
-            if result:
-                return result
+                filtered_when = ""
+            elif result:
+                filtered_when = result
+            else:
+                filtered_when = when_text
         except Exception:
-            pass
-        return all_rules
+            filtered_when = when_text
+
+        # Reassemble: mandatory sections + filtered When rules
+        output = "\n".join(mandatory_lines)
+        if filtered_when:
+            output += "\n" + filtered_when
+        return output
 
     def get_scratchpad_context(self) -> str:
         """Retrieve procedural knowledge for scratchpad tool injection.

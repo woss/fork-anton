@@ -120,7 +120,13 @@ class EpisodicMemory:
     ) -> list[Episode]:
         """Search episodes for *query* (case-insensitive substring match).
 
-        Returns newest-first, capped at *max_results*.
+        When a user turn matches, returns the full episode context: the
+        matching turn plus the assistant response, tool calls, and scratchpad
+        results from the same turn. This mirrors real episodic recall — you
+        remember the whole episode, not just the cue.
+
+        Returns newest-first, capped at *max_results* episodes (each episode
+        may include multiple turns).
         """
         if not self._dir.is_dir():
             return []
@@ -131,11 +137,11 @@ class EpisodicMemory:
 
         pattern = re.compile(re.escape(query), re.IGNORECASE)
         matches: list[Episode] = []
+        seen_turns: set[tuple[str, int]] = set()  # (session, turn) dedup
 
         # Iterate files newest-first (filenames sort chronologically)
         for path in sorted(self._dir.glob("*.jsonl"), reverse=True):
             if cutoff is not None:
-                # Quick filename check: 20260227_143052.jsonl
                 stem = path.stem
                 try:
                     file_dt = datetime.strptime(stem, "%Y%m%d_%H%M%S").replace(
@@ -151,18 +157,50 @@ class EpisodicMemory:
             except Exception:
                 continue
 
-            # Reverse lines so newest episodes come first within a file
-            for line in reversed(lines):
+            # Parse all episodes in this file for context lookups
+            all_episodes: list[Episode] = []
+            for line in lines:
                 if not line.strip():
                     continue
-                if not pattern.search(line):
-                    continue
                 try:
-                    data = json.loads(line)
-                    matches.append(Episode(**data))
+                    all_episodes.append(Episode(**json.loads(line)))
                 except Exception:
                     continue
-                if len(matches) >= max_results:
+
+            # Build turn index: (session, turn) -> list of episodes
+            turn_index: dict[tuple[str, int], list[Episode]] = {}
+            for ep in all_episodes:
+                key = (ep.session, ep.turn)
+                turn_index.setdefault(key, []).append(ep)
+
+            # Search newest-first
+            for ep in reversed(all_episodes):
+                if not pattern.search(ep.content):
+                    continue
+
+                key = (ep.session, ep.turn)
+                if key in seen_turns:
+                    continue
+                seen_turns.add(key)
+
+                # Include the matching turn's full context
+                turn_episodes = turn_index.get(key, [ep])
+                matches.extend(turn_episodes)
+
+                # Also grab the next turn if it has an assistant response
+                if ep.role == "user":
+                    next_key = (ep.session, ep.turn + 1)
+                    if next_key not in seen_turns:
+                        next_eps = turn_index.get(next_key, [])
+                        has_response = any(
+                            e.role in ("assistant", "tool_result", "scratchpad")
+                            for e in next_eps
+                        )
+                        if next_eps and has_response:
+                            seen_turns.add(next_key)
+                            matches.extend(next_eps)
+
+                if len(seen_turns) >= max_results:
                     return matches
 
         return matches
@@ -178,7 +216,9 @@ class EpisodicMemory:
             return f"No episodes found matching '{query}'."
         lines: list[str] = []
         for ep in episodes:
-            lines.append(f"[{ep.ts}] ({ep.role}) {ep.content[:200]}")
+            # Show more content for assistant/scratchpad responses
+            max_len = 2000 if ep.role in ("assistant", "scratchpad", "tool_result") else 500
+            lines.append(f"[{ep.ts}] ({ep.role}) {ep.content[:max_len]}")
         return "\n".join(lines)
 
     def session_count(self) -> int:
