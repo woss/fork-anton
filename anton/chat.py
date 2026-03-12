@@ -586,6 +586,8 @@ class ChatSession:
                                 message=description or "Running code",
                                 eta_seconds=estimated_seconds,
                             )
+                            import time as _time
+                            _sp_t0 = _time.monotonic()
                             from anton.scratchpad import Cell
                             cell = None
                             async for item in pad.execute_streaming(
@@ -601,6 +603,12 @@ class ChatSession:
                                     )
                                 elif isinstance(item, Cell):
                                     cell = item
+                            _sp_elapsed = _time.monotonic() - _sp_t0
+                            yield StreamTaskProgress(
+                                phase="scratchpad_done",
+                                message=description or "Done",
+                                eta_seconds=_sp_elapsed,
+                            )
                             result_text = format_cell_result(cell) if cell else "No result produced."
 
                             # Log scratchpad cell to episodic memory
@@ -1931,7 +1939,7 @@ class _ClosingSpinner:
         from rich.text import Text
 
         spinner = Spinner("dots", text=Text(" Closing scratchpad processes…", style="anton.muted"))
-        self._live = Live(spinner, console=self._console, refresh_per_second=12, transient=True)
+        self._live = Live(spinner, console=self._console, refresh_per_second=6, transient=True)
         self._live.start()
 
     def stop(self) -> None:
