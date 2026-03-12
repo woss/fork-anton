@@ -1638,6 +1638,12 @@ async def _handle_data_connections(
                 console.print()
                 continue
 
+            if new_key in all_keys:
+                if not Confirm.ask(f"{new_key} already exists. Overwrite?", default=False, console=console):
+                    console.print("[anton.muted]Cancelled.[/]")
+                    console.print()
+                    continue
+
             use_password = _is_secret_key(new_key)
             new_val = Prompt.ask(
                 f"Value for {new_key}",
