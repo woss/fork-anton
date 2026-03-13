@@ -48,8 +48,6 @@ class AntonSettings(BaseSettings):
 
     disable_autoupdates: bool = False
 
-    proactive_dashboards: bool = False  # If True, Anton creates dashboards/charts proactively; if False, only when user asks
-
     # Minds datasource integration
     minds_enabled: bool = False  # opt-in: use Minds server as LLM provider
     minds_api_key: str | None = None
