@@ -54,6 +54,7 @@ if TYPE_CHECKING:
 
 
 _MAX_TOOL_ROUNDS = 25  # Hard limit on consecutive tool-call rounds per turn
+_MAX_CONTINUATIONS = 3  # Max times the verification loop can restart the tool loop
 _CONTEXT_PRESSURE_THRESHOLD = 0.7  # Trigger compaction when context is 70% full
 _MAX_CONSECUTIVE_ERRORS = 5  # Stop if the same tool fails this many times in a row
 _RESILIENCE_NUDGE_AT = 2  # Inject resilience nudge after this many consecutive errors
@@ -527,178 +528,300 @@ class ChatSession:
                 message="Context was getting long — older history has been summarized."
             )
 
-        # Tool-call loop with circuit breaker
-        tool_round = 0
-        error_streak: dict[str, int] = {}
-        resilience_nudged: set[str] = set()
+        # Tool-call loop with circuit breaker, wrapped in a completion
+        # verification outer loop that can restart the tool loop if the
+        # task isn't actually done yet.
+        continuation = 0
+        _max_rounds_hit = False
 
-        while llm_response.tool_calls:
-            tool_round += 1
-            if tool_round > _MAX_TOOL_ROUNDS:
-                self._history.append({"role": "assistant", "content": llm_response.content or ""})
-                self._history.append({
-                    "role": "user",
-                    "content": (
-                        f"SYSTEM: You have used {_MAX_TOOL_ROUNDS} tool-call rounds on this turn. "
-                        "Stop retrying. Summarize what you accomplished and what failed, "
-                        "then tell the user what they can do to unblock the issue."
-                    ),
-                })
-                async for event in self._llm.plan_stream(
-                    system=system,
-                    messages=self._history,
-                ):
-                    yield event
-                return
+        while True:  # Completion verification loop
+            tool_round = 0
+            error_streak: dict[str, int] = {}
+            resilience_nudged: set[str] = set()
 
-            # Build assistant message with content blocks
-            assistant_content: list[dict] = []
-            if llm_response.content:
-                assistant_content.append({"type": "text", "text": llm_response.content})
-            for tc in llm_response.tool_calls:
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": tc.id,
-                    "name": tc.name,
-                    "input": tc.input,
-                })
-            self._history.append({"role": "assistant", "content": assistant_content})
+            while llm_response.tool_calls:
+                tool_round += 1
+                if tool_round > _MAX_TOOL_ROUNDS:
+                    _max_rounds_hit = True
+                    self._history.append({"role": "assistant", "content": llm_response.content or ""})
+                    self._history.append({
+                        "role": "user",
+                        "content": (
+                            f"SYSTEM: You have used {_MAX_TOOL_ROUNDS} tool-call rounds on this turn. "
+                            "Stop retrying. Summarize what you accomplished and what failed, "
+                            "then tell the user what they can do to unblock the issue."
+                        ),
+                    })
+                    async for event in self._llm.plan_stream(
+                        system=system,
+                        messages=self._history,
+                    ):
+                        yield event
+                    break
 
-            # Process each tool call
-            tool_results: list[dict] = []
-            for tc in llm_response.tool_calls:
-                # Log tool call to episodic memory
-                if self._episodic is not None:
-                    tc_desc = str(tc.input)[:2000]
-                    self._episodic.log_turn(
-                        self._turn_count + 1, "tool_call", tc_desc,
-                        tool=tc.name,
-                    )
+                # Build assistant message with content blocks
+                assistant_content: list[dict] = []
+                if llm_response.content:
+                    assistant_content.append({"type": "text", "text": llm_response.content})
+                for tc in llm_response.tool_calls:
+                    assistant_content.append({
+                        "type": "tool_use",
+                        "id": tc.id,
+                        "name": tc.name,
+                        "input": tc.input,
+                    })
+                self._history.append({"role": "assistant", "content": assistant_content})
 
-                try:
-                    if tc.name == "scratchpad" and tc.input.get("action") == "exec":
-                        # Inline streaming exec — yields progress events
-                        prep = await prepare_scratchpad_exec(self, tc.input)
-                        if isinstance(prep, str):
-                            result_text = prep
-                        else:
-                            pad, code, description, estimated_time, estimated_seconds = prep
-                            # Signal intent + ETA before execution begins
-                            yield StreamTaskProgress(
-                                phase="scratchpad_start",
-                                message=description or "Running code",
-                                eta_seconds=estimated_seconds,
-                            )
-                            import time as _time
-                            _sp_t0 = _time.monotonic()
-                            from anton.scratchpad import Cell
-                            cell = None
-                            async for item in pad.execute_streaming(
-                                code,
-                                description=description,
-                                estimated_time=estimated_time,
-                                estimated_seconds=estimated_seconds,
-                                cancel_event=self._cancel_event,
-                            ):
-                                if isinstance(item, str):
-                                    yield StreamTaskProgress(
-                                        phase="scratchpad", message=item
-                                    )
-                                elif isinstance(item, Cell):
-                                    cell = item
-                            _sp_elapsed = _time.monotonic() - _sp_t0
-                            yield StreamTaskProgress(
-                                phase="scratchpad_done",
-                                message=description or "Done",
-                                eta_seconds=_sp_elapsed,
-                            )
-                            result_text = format_cell_result(cell) if cell else "No result produced."
+                # Process each tool call
+                tool_results: list[dict] = []
+                for tc in llm_response.tool_calls:
+                    # Log tool call to episodic memory
+                    if self._episodic is not None:
+                        tc_desc = str(tc.input)[:2000]
+                        self._episodic.log_turn(
+                            self._turn_count + 1, "tool_call", tc_desc,
+                            tool=tc.name,
+                        )
 
-                            # Log scratchpad cell to episodic memory
-                            if self._episodic is not None and cell is not None:
-                                self._episodic.log_turn(
-                                    self._turn_count + 1, "scratchpad",
-                                    (cell.stdout or "")[:2000],
-                                    description=description,
+                    try:
+                        if tc.name == "scratchpad" and tc.input.get("action") == "exec":
+                            # Inline streaming exec — yields progress events
+                            prep = await prepare_scratchpad_exec(self, tc.input)
+                            if isinstance(prep, str):
+                                result_text = prep
+                            else:
+                                pad, code, description, estimated_time, estimated_seconds = prep
+                                # Signal intent + ETA before execution begins
+                                yield StreamTaskProgress(
+                                    phase="scratchpad_start",
+                                    message=description or "Running code",
+                                    eta_seconds=estimated_seconds,
                                 )
-                    else:
-                        result_text = await dispatch_tool(self, tc.name, tc.input)
-                        if tc.name == "scratchpad" and tc.input.get("action") == "dump":
-                            yield StreamToolResult(content=result_text)
-                            result_text = (
-                                "The full notebook has been displayed to the user above. "
-                                "Do not repeat it. Here is the content for your reference:\n\n"
-                                + result_text
-                            )
-                except Exception as exc:
-                    result_text = f"Tool '{tc.name}' failed: {exc}"
+                                import time as _time
+                                _sp_t0 = _time.monotonic()
+                                from anton.scratchpad import Cell
+                                cell = None
+                                async for item in pad.execute_streaming(
+                                    code,
+                                    description=description,
+                                    estimated_time=estimated_time,
+                                    estimated_seconds=estimated_seconds,
+                                    cancel_event=self._cancel_event,
+                                ):
+                                    if isinstance(item, str):
+                                        yield StreamTaskProgress(
+                                            phase="scratchpad", message=item
+                                        )
+                                    elif isinstance(item, Cell):
+                                        cell = item
+                                _sp_elapsed = _time.monotonic() - _sp_t0
+                                yield StreamTaskProgress(
+                                    phase="scratchpad_done",
+                                    message=description or "Done",
+                                    eta_seconds=_sp_elapsed,
+                                )
+                                result_text = format_cell_result(cell) if cell else "No result produced."
 
-                # Log tool result to episodic memory
-                if self._episodic is not None:
-                    self._episodic.log_turn(
-                        self._turn_count + 1, "tool_result", result_text[:2000],
-                        tool=tc.name,
+                                # Log scratchpad cell to episodic memory
+                                if self._episodic is not None and cell is not None:
+                                    self._episodic.log_turn(
+                                        self._turn_count + 1, "scratchpad",
+                                        (cell.stdout or "")[:2000],
+                                        description=description,
+                                    )
+                        else:
+                            result_text = await dispatch_tool(self, tc.name, tc.input)
+                            if tc.name == "scratchpad" and tc.input.get("action") == "dump":
+                                yield StreamToolResult(content=result_text)
+                                result_text = (
+                                    "The full notebook has been displayed to the user above. "
+                                    "Do not repeat it. Here is the content for your reference:\n\n"
+                                    + result_text
+                                )
+                    except Exception as exc:
+                        result_text = f"Tool '{tc.name}' failed: {exc}"
+
+                    # Log tool result to episodic memory
+                    if self._episodic is not None:
+                        self._episodic.log_turn(
+                            self._turn_count + 1, "tool_result", result_text[:2000],
+                            tool=tc.name,
+                        )
+
+                    result_text = _apply_error_tracking(
+                        result_text, tc.name, error_streak, resilience_nudged,
                     )
 
-                result_text = _apply_error_tracking(
-                    result_text, tc.name, error_streak, resilience_nudged,
-                )
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result_text,
+                    })
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tc.id,
-                    "content": result_text,
-                })
+                self._history.append({"role": "user", "content": tool_results})
 
-            self._history.append({"role": "user", "content": tool_results})
+                # Signal that tools are done and LLM is now analyzing
+                yield StreamTaskProgress(phase="analyzing", message="Analyzing results...")
 
-            # Signal that tools are done and LLM is now analyzing
-            yield StreamTaskProgress(phase="analyzing", message="Analyzing results...")
+                # Stream follow-up
+                response = None
+                try:
+                    async for event in self._llm.plan_stream(
+                        system=system,
+                        messages=self._history,
+                        tools=tools,
+                    ):
+                        yield event
+                        if isinstance(event, StreamComplete):
+                            response = event
+                except ContextOverflowError:
+                    if not _compacted_this_turn:
+                        await self._summarize_history()
+                        self._compact_scratchpads()
+                        _compacted_this_turn = True
+                    yield StreamContextCompacted(
+                        message="Context was getting long — older history has been summarized."
+                    )
+                    async for event in self._llm.plan_stream(
+                        system=system,
+                        messages=self._history,
+                        tools=tools,
+                    ):
+                        yield event
+                        if isinstance(event, StreamComplete):
+                            response = event
 
-            # Stream follow-up
-            response = None
-            try:
-                async for event in self._llm.plan_stream(
-                    system=system,
-                    messages=self._history,
-                    tools=tools,
-                ):
-                    yield event
-                    if isinstance(event, StreamComplete):
-                        response = event
-            except ContextOverflowError:
-                if not _compacted_this_turn:
+                if response is None:
+                    return
+                llm_response = response.response
+
+                # Proactive compaction during tool loop
+                if not _compacted_this_turn and llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
                     await self._summarize_history()
                     self._compact_scratchpads()
                     _compacted_this_turn = True
-                yield StreamContextCompacted(
-                    message="Context was getting long — older history has been summarized."
+                    yield StreamContextCompacted(
+                        message="Context was getting long — older history has been summarized."
+                    )
+
+            # --- Completion verification ---
+            # Only verify when tools were actually used (not for simple Q&A)
+            # and we haven't hit the max-rounds hard stop.
+            if tool_round == 0 or _max_rounds_hit:
+                break
+
+            # Append the assistant's final text so the verifier can see it
+            reply = llm_response.content or ""
+            self._history.append({"role": "assistant", "content": reply})
+
+            if continuation >= _MAX_CONTINUATIONS:
+                # Budget exhausted — ask LLM to diagnose and present to user
+                self._history.append({
+                    "role": "user",
+                    "content": (
+                        "SYSTEM: You have attempted to complete this task multiple times "
+                        "but verification indicates it is still not done. Do NOT try again. "
+                        "Instead:\n"
+                        "1. Summarize exactly what was accomplished so far.\n"
+                        "2. Identify the specific blocker or failure preventing completion.\n"
+                        "3. Suggest concrete next steps the user can take to unblock this.\n"
+                        "Be honest and specific — do not be vague about what went wrong."
+                    ),
+                })
+                yield StreamTaskProgress(
+                    phase="analyzing", message="Diagnosing incomplete task..."
                 )
                 async for event in self._llm.plan_stream(
                     system=system,
                     messages=self._history,
-                    tools=tools,
                 ):
                     yield event
-                    if isinstance(event, StreamComplete):
-                        response = event
+                # Consolidation still runs after diagnosis
+                break
 
+            # Ask the LLM to self-assess completion
+            verification = await self._llm.plan(
+                system=(
+                    "You are a task-completion verifier. Given the conversation, determine "
+                    "whether the user's original request has been fully completed.\n\n"
+                    "Respond with EXACTLY one of these lines, followed by a brief reason:\n"
+                    "STATUS: COMPLETE — <reason>\n"
+                    "STATUS: INCOMPLETE — <reason>\n"
+                    "STATUS: STUCK — <reason>\n\n"
+                    "COMPLETE = the task is done or the response fully answers the question.\n"
+                    "INCOMPLETE = more work can be done to finish the task.\n"
+                    "STUCK = a blocker prevents completion (missing info, permissions, etc).\n\n"
+                    "Be strict: if the user asked for X and only part of X was delivered, "
+                    "that is INCOMPLETE, not COMPLETE. But if the user asked a question "
+                    "and the assistant answered it, that is COMPLETE even without tool use."
+                ),
+                messages=self._history,
+                max_tokens=256,
+            )
+
+            status_text = (verification.content or "").strip().upper()
+            if "STATUS: COMPLETE" in status_text:
+                break
+            if "STATUS: STUCK" in status_text:
+                # Stuck — inject diagnosis request and let the LLM explain
+                reason = (verification.content or "").strip()
+                self._history.append({
+                    "role": "user",
+                    "content": (
+                        f"SYSTEM: Task verification determined this task is stuck.\n"
+                        f"Verifier assessment: {reason}\n\n"
+                        "Explain to the user what went wrong, what you tried, and "
+                        "suggest specific next steps they can take to unblock this."
+                    ),
+                })
+                yield StreamTaskProgress(
+                    phase="analyzing", message="Diagnosing blocked task..."
+                )
+                async for event in self._llm.plan_stream(
+                    system=system,
+                    messages=self._history,
+                ):
+                    yield event
+                break
+
+            # INCOMPLETE — continue working
+            continuation += 1
+            reason = (verification.content or "").strip()
+            self._history.append({
+                "role": "user",
+                "content": (
+                    f"SYSTEM: Task verification determined this task is not yet complete "
+                    f"(attempt {continuation}/{_MAX_CONTINUATIONS}).\n"
+                    f"Verifier assessment: {reason}\n\n"
+                    "Continue working on the original request. Pick up where you left off "
+                    "and finish the remaining work. Do not repeat work already done."
+                ),
+            })
+            yield StreamTaskProgress(
+                phase="analyzing",
+                message=f"Task incomplete — continuing ({continuation}/{_MAX_CONTINUATIONS})...",
+            )
+
+            # Re-enter tool loop: get next LLM response with tools available
+            response = None
+            async for event in self._llm.plan_stream(
+                system=system,
+                messages=self._history,
+                tools=tools,
+            ):
+                yield event
+                if isinstance(event, StreamComplete):
+                    response = event
             if response is None:
                 return
             llm_response = response.response
+            # Loop back to the top of the completion verification loop
 
-            # Proactive compaction during tool loop
-            if not _compacted_this_turn and llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
-                await self._summarize_history()
-                self._compact_scratchpads()
-                _compacted_this_turn = True
-                yield StreamContextCompacted(
-                    message="Context was getting long — older history has been summarized."
-                )
-
-        # Text-only final response — append to history
-        reply = llm_response.content or ""
-        self._history.append({"role": "assistant", "content": reply})
+        # Text-only final response — append to history (if not already appended
+        # by the verification block above).
+        if not self._history or self._history[-1].get("role") != "assistant":
+            reply = llm_response.content or ""
+            self._history.append({"role": "assistant", "content": reply})
 
         # Consolidation: replay scratchpad sessions to extract lessons
         if self._cortex is not None and self._cortex.mode != "off":
@@ -2137,6 +2260,19 @@ class _EscapeWatcher:
                     continue
                 ch = os.read(fd, 1)
                 if ch == b"\x1b":
+                    # Arrow keys and other special keys send escape
+                    # sequences starting with \x1b (e.g. \x1b[A for
+                    # up-arrow).  Wait briefly to see if more bytes
+                    # follow — if they do, this is a multi-byte
+                    # sequence, not a standalone Escape press.
+                    followup = await loop.run_in_executor(
+                        None, lambda: select.select([fd], [], [], 0.05)[0]
+                    )
+                    if followup:
+                        # Consume the rest of the escape sequence and
+                        # ignore it (not a bare ESC key).
+                        os.read(fd, 32)
+                        continue
                     if self._on_cancel is not None:
                         self._on_cancel()
                     self.cancelled.set()
