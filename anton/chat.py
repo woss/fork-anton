@@ -2364,6 +2364,15 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
             if message_content is None and stripped.lower() in ("exit", "quit", "bye"):
                 break
 
+            # Detect dragged file paths early — a dragged absolute path like
+            # "/Users/foo/bar.txt" starts with "/" and would otherwise be
+            # mistaken for a slash command.
+            if message_content is None and stripped.startswith("/"):
+                dropped_early = _parse_dropped_paths(stripped)
+                if dropped_early:
+                    stripped = _format_file_message(stripped, dropped_early, console)
+                    message_content = stripped
+
             # Slash command dispatch
             if message_content is None and stripped.startswith("/"):
                 parts = stripped.split(maxsplit=1)
