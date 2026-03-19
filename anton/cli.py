@@ -440,3 +440,13 @@ def list_learnings(ctx: typer.Context) -> None:
 def version() -> None:
     """Show Anton version."""
     console.print(f"Anton v{__version__}")
+
+
+@app.command("connect-datasource")
+def connect_datasource(ctx: typer.Context) -> None:
+    """Connect a new datasource."""
+    #from anton.datasources import connect_new_datasource
+    print("Datasource connection flow is not implemented yet.")
+    settings = _get_settings(ctx)
+    _ensure_workspace(settings)
+    #connect_new_datasource(console, settings)
