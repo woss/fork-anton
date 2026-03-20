@@ -103,7 +103,9 @@ def _ensure_dependencies(console: Console) -> None:
         ):
             import subprocess
 
-            console.print(f"[anton.muted]  Running: uv pip install {' '.join(missing)}[/]")
+            console.print(
+                f"[anton.muted]  Running: uv pip install {' '.join(missing)}[/]"
+            )
             result = subprocess.run(
                 [uv, "pip", "install", "--python", sys.executable, *missing],
                 capture_output=True,
@@ -113,12 +115,18 @@ def _ensure_dependencies(console: Console) -> None:
                 _reexec()
             else:
                 console.print(f"[anton.error]  Install failed:[/]")
-                console.print(result.stderr.decode() if result.stderr else result.stdout.decode())
+                console.print(
+                    result.stderr.decode() if result.stderr else result.stdout.decode()
+                )
                 if install_script.is_file():
                     if sys.platform == "win32":
-                        console.print(f"\n[anton.muted]  Or run the install script: powershell -File {install_script}[/]")
+                        console.print(
+                            f"\n[anton.muted]  Or run the install script: powershell -File {install_script}[/]"
+                        )
                     else:
-                        console.print(f"\n[anton.muted]  Or run the install script: sh {install_script}[/]")
+                        console.print(
+                            f"\n[anton.muted]  Or run the install script: sh {install_script}[/]"
+                        )
             raise typer.Exit(0)
     elif install_script.is_file():
         console.print(f"To install all dependencies, run:")
@@ -133,11 +141,16 @@ def _ensure_dependencies(console: Console) -> None:
         console.print(f"  [bold]pip install {' '.join(missing)}[/]")
         console.print()
         if sys.platform == "win32":
-            console.print("[anton.muted]Or reinstall anton: irm https://raw.githubusercontent.com/mindsdb/anton/main/install.ps1 | iex[/]")
+            console.print(
+                "[anton.muted]Or reinstall anton: irm https://raw.githubusercontent.com/mindsdb/anton/main/install.ps1 | iex[/]"
+            )
         else:
-            console.print('[anton.muted]Or reinstall anton: curl -sSf https://raw.githubusercontent.com/mindsdb/anton/main/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"[/]')
+            console.print(
+                '[anton.muted]Or reinstall anton: curl -sSf https://raw.githubusercontent.com/mindsdb/anton/main/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"[/]'
+            )
         console.print()
         raise typer.Exit(1)
+
 
 app = typer.Typer(
     name="anton",
@@ -206,6 +219,7 @@ def main(
     settings.resolve_workspace(folder)
 
     from anton.updater import check_and_update
+
     if check_and_update(console, settings):
         # Re-exec with the freshly installed code so no old modules remain in memory.
         _reexec()
@@ -227,9 +241,13 @@ def _has_api_key(settings) -> bool:
     """Check if all configured providers have API keys."""
     providers = {settings.planning_provider, settings.coding_provider}
     for p in providers:
-        if p == "anthropic" and not (settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")):
+        if p == "anthropic" and not (
+            settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        ):
             return False
-        if p in ("openai", "openai-compatible") and not (settings.openai_api_key or os.environ.get("OPENAI_API_KEY")):
+        if p in ("openai", "openai-compatible") and not (
+            settings.openai_api_key or os.environ.get("OPENAI_API_KEY")
+        ):
             return False
     return True
 
@@ -316,12 +334,15 @@ def _ensure_minds_api_key(settings, ws) -> None:
     # Test if the Minds server supports LLM endpoints (_code_/_reason_)
     # (silenced: was printing "Testing LLM endpoints..." and "not available" messages)
     from anton.chat import _minds_test_llm
+
     llm_ok = _minds_test_llm(minds_url, api_key, verify=True)
     if not llm_ok:
         llm_ok = _minds_test_llm(minds_url, api_key, verify=False)
 
     if llm_ok:
-        console.print("[anton.success]LLM endpoints available — using Minds server as LLM provider.[/]")
+        console.print(
+            "[anton.success]LLM endpoints available — using Minds server as LLM provider.[/]"
+        )
         base_url = f"{minds_url}/api/v1"
         settings.openai_api_key = api_key
         settings.openai_base_url = base_url
@@ -443,8 +464,18 @@ def version() -> None:
 
 
 @app.command("connect-data-source")
-def connect_data_source(ctx: typer.Context) -> None:
-    """Connect a database or API to the Local Vault."""
+def connect_data_source(
+    ctx: typer.Context,
+    slug: str = typer.Argument(
+        default="", help="Existing connection slug to reconnect (e.g. postgres-mydb)."
+    ),
+) -> None:
+    """Connect a database or API to the Local Vault.
+
+    Pass an existing connection slug (e.g. postgres-mydb) to reconnect using
+    stored credentials without re-entering them.  Use /edit-data-source to
+    update credentials for an existing connection.
+    """
     import asyncio
 
     from anton.chat import ChatSession, _handle_connect_datasource
@@ -463,12 +494,18 @@ def connect_data_source(ctx: typer.Context) -> None:
             settings.anthropic_api_key
             if settings.coding_provider == "anthropic"
             else settings.openai_api_key
-        ) or "",
+        )
+        or "",
     )
     session = ChatSession(llm_client)
 
     async def _run() -> None:
-        updated = await _handle_connect_datasource(console, scratchpads, session)
+        updated = await _handle_connect_datasource(
+            console,
+            scratchpads,
+            session,
+            datasource_name=slug or None,
+        )
         await updated._scratchpads.close_all()
 
     asyncio.run(_run())

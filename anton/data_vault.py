@@ -1,11 +1,3 @@
-"""Local Vault — stores data source connection credentials.
-
-Each connection is saved as a JSON file in ~/.anton/data_vault/.
-Files are named {engine}-{connection_name} and contain the credential
-fields in plain text. Files are only read at runtime when Anton needs
-to establish or test a connection.
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,14 +18,12 @@ class DataVault:
     def __init__(self, vault_dir: Path | None = None) -> None:
         self._dir = vault_dir or Path("~/.anton/data_vault").expanduser()
 
-
     def _path_for(self, engine: str, name: str) -> Path:
         return self._dir / f"{_sanitize(engine)}-{_sanitize(name)}"
 
     def _ensure_dir(self) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._dir.chmod(0o700)
-
 
     def save(self, engine: str, name: str, credentials: dict[str, str]) -> Path:
         """Write credentials as JSON atomically. Creates vault dir if needed."""
@@ -80,15 +70,16 @@ class DataVault:
                 continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                results.append({
-                    "engine": data.get("engine", ""),
-                    "name": data.get("name", ""),
-                    "created_at": data.get("created_at", ""),
-                })
+                results.append(
+                    {
+                        "engine": data.get("engine", ""),
+                        "name": data.get("name", ""),
+                        "created_at": data.get("created_at", ""),
+                    }
+                )
             except (json.JSONDecodeError, OSError):
                 continue
         return results
-
 
     def inject_env(self, engine: str, name: str) -> list[str] | None:
         """Load credentials and set DS_<FIELD_UPPER> in os.environ.
@@ -112,7 +103,6 @@ class DataVault:
         for key in ds_keys:
             del os.environ[key]
 
-
     def next_connection_number(self, engine: str) -> int:
         """Return the next auto-increment number for an engine (1-based).
 
@@ -122,12 +112,13 @@ class DataVault:
         if not self._dir.is_dir():
             return 1
         existing = [
-            p.name for p in self._dir.iterdir()
+            p.name
+            for p in self._dir.iterdir()
             if p.is_file() and p.name.startswith(prefix)
         ]
         max_n = 0
         for fname in existing:
-            suffix = fname[len(prefix):]
+            suffix = fname[len(prefix) :]
             if suffix.isdigit():
                 max_n = max(max_n, int(suffix))
         return max_n + 1

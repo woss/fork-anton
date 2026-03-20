@@ -1,9 +1,3 @@
-"""Datasource registry — parses datasources.md engine definitions.
-
-Reads YAML blocks from the built-in datasources.md (project root) and
-merges user overrides from ~/.anton/datasources.md on top.
-"""
-
 from __future__ import annotations
 
 import re
@@ -56,13 +50,15 @@ def _parse_fields(raw: list) -> list[DatasourceField]:
     for f in raw or []:
         if not isinstance(f, dict):
             continue
-        result.append(DatasourceField(
-            name=f.get("name", ""),
-            required=bool(f.get("required", True)),
-            secret=bool(f.get("secret", False)),
-            description=f.get("description", ""),
-            default=str(f.get("default", "")),
-        ))
+        result.append(
+            DatasourceField(
+                name=f.get("name", ""),
+                required=bool(f.get("required", True)),
+                secret=bool(f.get("secret", False)),
+                description=f.get("description", ""),
+                default=str(f.get("default", "")),
+            )
+        )
     return result
 
 
@@ -79,7 +75,11 @@ def _parse_file(path: Path) -> dict[str, DatasourceEngine]:
             data = yaml.safe_load(yaml_text)
         except yaml.YAMLError as exc:
             import sys
-            print(f"[anton] Warning: skipping malformed YAML block in {path}: {exc}", file=sys.stderr)
+
+            print(
+                f"[anton] Warning: skipping malformed YAML block in {path}: {exc}",
+                file=sys.stderr,
+            )
             continue
         if not isinstance(data, dict) or "engine" not in data:
             continue
@@ -89,11 +89,13 @@ def _parse_file(path: Path) -> dict[str, DatasourceEngine]:
         for am in raw_auth_methods:
             if not isinstance(am, dict):
                 continue
-            auth_methods.append(AuthMethod(
-                name=am.get("name", ""),
-                display=am.get("display", am.get("name", "")),
-                fields=_parse_fields(am.get("fields", [])),
-            ))
+            auth_methods.append(
+                AuthMethod(
+                    name=am.get("name", ""),
+                    display=am.get("display", am.get("name", "")),
+                    fields=_parse_fields(am.get("fields", [])),
+                )
+            )
 
         engine_slug = str(data["engine"])
         engines[engine_slug] = DatasourceEngine(
@@ -129,14 +131,14 @@ class DatasourceRegistry:
         return self._engines.get(engine_slug)
 
     def find_by_name(self, display_name: str) -> DatasourceEngine | None:
-        """Case-insensitive match on display_name or engine slug.
-        """
+        """Case-insensitive match on display_name or engine slug."""
         needle = display_name.strip().lower()
         for engine in self._engines.values():
             if engine.display_name.lower() == needle or engine.engine.lower() == needle:
                 return engine
         matches = [
-            e for e in self._engines.values()
+            e
+            for e in self._engines.values()
             if needle in e.display_name.lower() or needle in e.engine.lower()
         ]
         return matches[0] if len(matches) == 1 else None
@@ -144,7 +146,9 @@ class DatasourceRegistry:
     def all_engines(self) -> list[DatasourceEngine]:
         return sorted(self._engines.values(), key=lambda e: e.display_name)
 
-    def derive_name(self, engine_def: DatasourceEngine, credentials: dict[str, str]) -> str:
+    def derive_name(
+        self, engine_def: DatasourceEngine, credentials: dict[str, str]
+    ) -> str:
         """Derive a default connection name from name_from field(s)."""
         name_from = engine_def.name_from
         if not name_from:

@@ -43,9 +43,13 @@ from anton.tools import (
     prepare_scratchpad_exec,
 )
 from anton.data_vault import DataVault
-from anton.datasource_registry import DatasourceEngine, DatasourceField, DatasourceRegistry, _parse_file as _ds_parse_file
+from anton.datasource_registry import (
+    DatasourceEngine,
+    DatasourceField,
+    DatasourceRegistry,
+    _parse_file as _ds_parse_file,
+)
 from rich.prompt import Confirm, Prompt
-
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -102,7 +106,11 @@ class ChatSession:
         self._console = console
         self._history: list[dict] = list(initial_history) if initial_history else []
         self._pending_memory_confirmations: list = []
-        self._turn_count = sum(1 for m in self._history if m.get("role") == "user") if initial_history else 0
+        self._turn_count = (
+            sum(1 for m in self._history if m.get("role") == "user")
+            if initial_history
+            else 0
+        )
         self._history_store = history_store
         self._session_id = session_id
         self._cancel_event = asyncio.Event()
@@ -141,17 +149,19 @@ class ChatSession:
         ]
         if not tool_ids:
             return
-        self._history.append({
-            "role": "user",
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": tid,
-                    "content": "Cancelled by user.",
-                }
-                for tid in tool_ids
-            ],
-        })
+        self._history.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tid,
+                        "content": "Cancelled by user.",
+                    }
+                    for tid in tool_ids
+                ],
+            }
+        )
 
     def _persist_history(self) -> None:
         """Save current history to disk if a history store is configured."""
@@ -161,7 +171,9 @@ class ChatSession:
     async def _build_system_prompt(self, user_message: str = "") -> str:
         prompt = CHAT_SYSTEM_PROMPT.format(
             runtime_context=self._runtime_context,
-            visualizations_section=build_visualizations_prompt(self._proactive_dashboards),
+            visualizations_section=build_visualizations_prompt(
+                self._proactive_dashboards
+            ),
         )
         # Inject memory context (replaces old self_awareness)
         if self._cortex is not None:
@@ -186,27 +198,60 @@ class ChatSession:
 
     # Packages the LLM is most likely to care about when writing scratchpad code.
     _NOTABLE_PACKAGES: set[str] = {
-        "numpy", "pandas", "matplotlib", "seaborn", "scipy", "scikit-learn",
-        "requests", "httpx", "aiohttp", "beautifulsoup4", "lxml",
-        "pillow", "sympy", "networkx", "sqlalchemy", "pydantic",
-        "rich", "tqdm", "click", "fastapi", "flask", "django",
-        "openai", "anthropic", "tiktoken", "transformers", "torch",
-        "polars", "pyarrow", "openpyxl", "xlsxwriter",
-        "plotly", "bokeh", "altair",
-        "pytest", "hypothesis",
-        "yaml", "pyyaml", "toml", "tomli", "tomllib",
-        "jinja2", "markdown", "pygments",
-        "cryptography", "paramiko", "boto3",
+        "numpy",
+        "pandas",
+        "matplotlib",
+        "seaborn",
+        "scipy",
+        "scikit-learn",
+        "requests",
+        "httpx",
+        "aiohttp",
+        "beautifulsoup4",
+        "lxml",
+        "pillow",
+        "sympy",
+        "networkx",
+        "sqlalchemy",
+        "pydantic",
+        "rich",
+        "tqdm",
+        "click",
+        "fastapi",
+        "flask",
+        "django",
+        "openai",
+        "anthropic",
+        "tiktoken",
+        "transformers",
+        "torch",
+        "polars",
+        "pyarrow",
+        "openpyxl",
+        "xlsxwriter",
+        "plotly",
+        "bokeh",
+        "altair",
+        "pytest",
+        "hypothesis",
+        "yaml",
+        "pyyaml",
+        "toml",
+        "tomli",
+        "tomllib",
+        "jinja2",
+        "markdown",
+        "pygments",
+        "cryptography",
+        "paramiko",
+        "boto3",
     }
 
     def _build_tools(self) -> list[dict]:
         scratchpad_tool = dict(SCRATCHPAD_TOOL)
         pkg_list = self._scratchpads._available_packages
         if pkg_list:
-            notable = sorted(
-                p for p in pkg_list
-                if p.lower() in self._NOTABLE_PACKAGES
-            )
+            notable = sorted(p for p in pkg_list if p.lower() in self._NOTABLE_PACKAGES)
             if notable:
                 pkg_line = ", ".join(notable)
                 extra = f"\n\nInstalled packages ({len(pkg_list)} total, notable: {pkg_line})."
@@ -218,7 +263,9 @@ class ChatSession:
         if self._cortex is not None:
             wisdom = self._cortex.get_scratchpad_context()
             if wisdom:
-                scratchpad_tool["description"] += f"\n\nLessons from past sessions:\n{wisdom}"
+                scratchpad_tool[
+                    "description"
+                ] += f"\n\nLessons from past sessions:\n{wisdom}"
 
         tools = [scratchpad_tool]
         if self._cortex is not None:
@@ -226,6 +273,7 @@ class ChatSession:
         elif self._self_awareness is not None:
             # Legacy fallback
             from anton.tools import MEMORIZE_TOOL as _MT
+
             tools.append(_MT)
         if self._episodic is not None and self._episodic.enabled:
             tools.append(RECALL_TOOL)
@@ -263,8 +311,7 @@ class ChatSession:
             if not isinstance(content, list):
                 break
             has_tool_result = any(
-                isinstance(b, dict) and b.get("type") == "tool_result"
-                for b in content
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in content
             )
             if not has_tool_result:
                 break
@@ -295,9 +342,13 @@ class ChatSession:
                         if block.get("type") == "text":
                             lines.append(f"[{role}]: {block['text'][:1000]}")
                         elif block.get("type") == "tool_use":
-                            lines.append(f"[{role}/tool_use]: {block.get('name', '')}({str(block.get('input', ''))[:500]})")
+                            lines.append(
+                                f"[{role}/tool_use]: {block.get('name', '')}({str(block.get('input', ''))[:500]})"
+                            )
                         elif block.get("type") == "tool_result":
-                            lines.append(f"[tool_result]: {str(block.get('content', ''))[:500]}")
+                            lines.append(
+                                f"[tool_result]: {str(block.get('content', ''))[:500]}"
+                            )
 
         old_text = "\n".join(lines)
         # Cap at ~8000 chars to avoid overloading the summarizer
@@ -330,7 +381,11 @@ class ChatSession:
         # If the recent portion starts with a user message, insert a minimal
         # assistant separator to avoid consecutive user messages (API error).
         if recent_turns and recent_turns[0].get("role") == "user":
-            self._history = [summary_msg, {"role": "assistant", "content": "Understood."}, *recent_turns]
+            self._history = [
+                summary_msg,
+                {"role": "assistant", "content": "Understood."},
+                *recent_turns,
+            ]
         else:
             self._history = [summary_msg] + recent_turns
 
@@ -377,15 +432,19 @@ class ChatSession:
         while response.tool_calls:
             tool_round += 1
             if tool_round > _MAX_TOOL_ROUNDS:
-                self._history.append({"role": "assistant", "content": response.content or ""})
-                self._history.append({
-                    "role": "user",
-                    "content": (
-                        f"SYSTEM: You have used {_MAX_TOOL_ROUNDS} tool-call rounds on this turn. "
-                        "Stop retrying. Summarize what you accomplished and what failed, "
-                        "then tell the user what they can do to unblock the issue."
-                    ),
-                })
+                self._history.append(
+                    {"role": "assistant", "content": response.content or ""}
+                )
+                self._history.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"SYSTEM: You have used {_MAX_TOOL_ROUNDS} tool-call rounds on this turn. "
+                            "Stop retrying. Summarize what you accomplished and what failed, "
+                            "then tell the user what they can do to unblock the issue."
+                        ),
+                    }
+                )
                 response = await self._llm.plan(
                     system=system,
                     messages=self._history,
@@ -397,12 +456,14 @@ class ChatSession:
             if response.content:
                 assistant_content.append({"type": "text", "text": response.content})
             for tc in response.tool_calls:
-                assistant_content.append({
-                    "type": "tool_use",
-                    "id": tc.id,
-                    "name": tc.name,
-                    "input": tc.input,
-                })
+                assistant_content.append(
+                    {
+                        "type": "tool_use",
+                        "id": tc.id,
+                        "name": tc.name,
+                        "input": tc.input,
+                    }
+                )
             self._history.append({"role": "assistant", "content": assistant_content})
 
             # Process each tool call via registry
@@ -415,14 +476,19 @@ class ChatSession:
 
                 result_text = _scrub_credentials(result_text)
                 result_text = _apply_error_tracking(
-                    result_text, tc.name, error_streak, resilience_nudged,
+                    result_text,
+                    tc.name,
+                    error_streak,
+                    resilience_nudged,
                 )
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tc.id,
-                    "content": result_text,
-                })
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result_text,
+                    }
+                )
 
             self._history.append({"role": "user", "content": tool_results})
 
@@ -457,13 +523,17 @@ class ChatSession:
 
         return reply
 
-    async def turn_stream(self, user_input: str | list[dict]) -> AsyncIterator[StreamEvent]:
+    async def turn_stream(
+        self, user_input: str | list[dict]
+    ) -> AsyncIterator[StreamEvent]:
         """Streaming version of turn(). Yields events as they arrive."""
         self._history.append({"role": "user", "content": user_input})
 
         # Log user input to episodic memory
         if self._episodic is not None:
-            content = user_input if isinstance(user_input, str) else str(user_input)[:2000]
+            content = (
+                user_input if isinstance(user_input, str) else str(user_input)[:2000]
+            )
             self._episodic.log_turn(self._turn_count + 1, "user", content)
 
         user_msg_str = user_input if isinstance(user_input, str) else ""
@@ -476,7 +546,9 @@ class ChatSession:
         # Log assistant response to episodic memory
         if self._episodic is not None and assistant_text_parts:
             self._episodic.log_turn(
-                self._turn_count + 1, "assistant", "".join(assistant_text_parts)[:2000],
+                self._turn_count + 1,
+                "assistant",
+                "".join(assistant_text_parts)[:2000],
             )
 
         # Identity extraction (Default Mode Network — every 5 turns)
@@ -488,7 +560,9 @@ class ChatSession:
             # Periodic memory vacuum (Systems Consolidation)
             self._cortex.maybe_vacuum()
 
-    async def _stream_and_handle_tools(self, user_message: str = "") -> AsyncIterator[StreamEvent]:
+    async def _stream_and_handle_tools(
+        self, user_message: str = ""
+    ) -> AsyncIterator[StreamEvent]:
         """Stream one LLM call, handle tool loops, yield all events."""
         system = await self._build_system_prompt(user_message)
         tools = self._build_tools()
@@ -531,7 +605,10 @@ class ChatSession:
         llm_response = response.response
 
         # Proactive compaction
-        if not _compacted_this_turn and llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
+        if (
+            not _compacted_this_turn
+            and llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD
+        ):
             await self._summarize_history()
             self._compact_scratchpads()
             _compacted_this_turn = True
@@ -554,15 +631,19 @@ class ChatSession:
                 tool_round += 1
                 if tool_round > _MAX_TOOL_ROUNDS:
                     _max_rounds_hit = True
-                    self._history.append({"role": "assistant", "content": llm_response.content or ""})
-                    self._history.append({
-                        "role": "user",
-                        "content": (
-                            f"SYSTEM: You have used {_MAX_TOOL_ROUNDS} tool-call rounds on this turn. "
-                            "Stop retrying. Summarize what you accomplished and what failed, "
-                            "then tell the user what they can do to unblock the issue."
-                        ),
-                    })
+                    self._history.append(
+                        {"role": "assistant", "content": llm_response.content or ""}
+                    )
+                    self._history.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"SYSTEM: You have used {_MAX_TOOL_ROUNDS} tool-call rounds on this turn. "
+                                "Stop retrying. Summarize what you accomplished and what failed, "
+                                "then tell the user what they can do to unblock the issue."
+                            ),
+                        }
+                    )
                     async for event in self._llm.plan_stream(
                         system=system,
                         messages=self._history,
@@ -573,15 +654,21 @@ class ChatSession:
                 # Build assistant message with content blocks
                 assistant_content: list[dict] = []
                 if llm_response.content:
-                    assistant_content.append({"type": "text", "text": llm_response.content})
+                    assistant_content.append(
+                        {"type": "text", "text": llm_response.content}
+                    )
                 for tc in llm_response.tool_calls:
-                    assistant_content.append({
-                        "type": "tool_use",
-                        "id": tc.id,
-                        "name": tc.name,
-                        "input": tc.input,
-                    })
-                self._history.append({"role": "assistant", "content": assistant_content})
+                    assistant_content.append(
+                        {
+                            "type": "tool_use",
+                            "id": tc.id,
+                            "name": tc.name,
+                            "input": tc.input,
+                        }
+                    )
+                self._history.append(
+                    {"role": "assistant", "content": assistant_content}
+                )
 
                 # Process each tool call
                 tool_results: list[dict] = []
@@ -590,7 +677,9 @@ class ChatSession:
                     if self._episodic is not None:
                         tc_desc = str(tc.input)[:2000]
                         self._episodic.log_turn(
-                            self._turn_count + 1, "tool_call", tc_desc,
+                            self._turn_count + 1,
+                            "tool_call",
+                            tc_desc,
                             tool=tc.name,
                         )
 
@@ -601,7 +690,13 @@ class ChatSession:
                             if isinstance(prep, str):
                                 result_text = prep
                             else:
-                                pad, code, description, estimated_time, estimated_seconds = prep
+                                (
+                                    pad,
+                                    code,
+                                    description,
+                                    estimated_time,
+                                    estimated_seconds,
+                                ) = prep
                                 # Signal intent + ETA before execution begins
                                 yield StreamTaskProgress(
                                     phase="scratchpad_start",
@@ -609,8 +704,10 @@ class ChatSession:
                                     eta_seconds=estimated_seconds,
                                 )
                                 import time as _time
+
                                 _sp_t0 = _time.monotonic()
                                 from anton.scratchpad import Cell
+
                                 cell = None
                                 async for item in pad.execute_streaming(
                                     code,
@@ -631,18 +728,26 @@ class ChatSession:
                                     message=description or "Done",
                                     eta_seconds=_sp_elapsed,
                                 )
-                                result_text = format_cell_result(cell) if cell else "No result produced."
+                                result_text = (
+                                    format_cell_result(cell)
+                                    if cell
+                                    else "No result produced."
+                                )
 
                                 # Log scratchpad cell to episodic memory
                                 if self._episodic is not None and cell is not None:
                                     self._episodic.log_turn(
-                                        self._turn_count + 1, "scratchpad",
+                                        self._turn_count + 1,
+                                        "scratchpad",
                                         (cell.stdout or "")[:2000],
                                         description=description,
                                     )
                         else:
                             result_text = await dispatch_tool(self, tc.name, tc.input)
-                            if tc.name == "scratchpad" and tc.input.get("action") == "dump":
+                            if (
+                                tc.name == "scratchpad"
+                                and tc.input.get("action") == "dump"
+                            ):
                                 yield StreamToolResult(content=result_text)
                                 result_text = (
                                     "The full notebook has been displayed to the user above. "
@@ -655,25 +760,34 @@ class ChatSession:
                     # Log tool result to episodic memory
                     if self._episodic is not None:
                         self._episodic.log_turn(
-                            self._turn_count + 1, "tool_result", result_text[:2000],
+                            self._turn_count + 1,
+                            "tool_result",
+                            result_text[:2000],
                             tool=tc.name,
                         )
 
                     result_text = _scrub_credentials(result_text)
                     result_text = _apply_error_tracking(
-                        result_text, tc.name, error_streak, resilience_nudged,
+                        result_text,
+                        tc.name,
+                        error_streak,
+                        resilience_nudged,
                     )
 
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": tc.id,
-                        "content": result_text,
-                    })
+                    tool_results.append(
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": result_text,
+                        }
+                    )
 
                 self._history.append({"role": "user", "content": tool_results})
 
                 # Signal that tools are done and LLM is now analyzing
-                yield StreamTaskProgress(phase="analyzing", message="Analyzing results...")
+                yield StreamTaskProgress(
+                    phase="analyzing", message="Analyzing results..."
+                )
 
                 # Stream follow-up
                 response = None
@@ -708,7 +822,11 @@ class ChatSession:
                 llm_response = response.response
 
                 # Proactive compaction during tool loop
-                if not _compacted_this_turn and llm_response.usage.context_pressure > _CONTEXT_PRESSURE_THRESHOLD:
+                if (
+                    not _compacted_this_turn
+                    and llm_response.usage.context_pressure
+                    > _CONTEXT_PRESSURE_THRESHOLD
+                ):
                     await self._summarize_history()
                     self._compact_scratchpads()
                     _compacted_this_turn = True
@@ -728,18 +846,20 @@ class ChatSession:
 
             if continuation >= _MAX_CONTINUATIONS:
                 # Budget exhausted — ask LLM to diagnose and present to user
-                self._history.append({
-                    "role": "user",
-                    "content": (
-                        "SYSTEM: You have attempted to complete this task multiple times "
-                        "but verification indicates it is still not done. Do NOT try again. "
-                        "Instead:\n"
-                        "1. Summarize exactly what was accomplished so far.\n"
-                        "2. Identify the specific blocker or failure preventing completion.\n"
-                        "3. Suggest concrete next steps the user can take to unblock this.\n"
-                        "Be honest and specific — do not be vague about what went wrong."
-                    ),
-                })
+                self._history.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "SYSTEM: You have attempted to complete this task multiple times "
+                            "but verification indicates it is still not done. Do NOT try again. "
+                            "Instead:\n"
+                            "1. Summarize exactly what was accomplished so far.\n"
+                            "2. Identify the specific blocker or failure preventing completion.\n"
+                            "3. Suggest concrete next steps the user can take to unblock this.\n"
+                            "Be honest and specific — do not be vague about what went wrong."
+                        ),
+                    }
+                )
                 yield StreamTaskProgress(
                     phase="analyzing", message="Diagnosing incomplete task..."
                 )
@@ -754,13 +874,15 @@ class ChatSession:
             # Ask the LLM to self-assess completion.
             # Use a copy of history with a trailing user message so models
             # that don't support assistant-prefill won't reject the request.
-            verify_messages = list(self._history) + [{
-                "role": "user",
-                "content": (
-                    "SYSTEM: Evaluate whether the task the user originally requested "
-                    "has been fully completed based on the conversation above."
-                ),
-            }]
+            verify_messages = list(self._history) + [
+                {
+                    "role": "user",
+                    "content": (
+                        "SYSTEM: Evaluate whether the task the user originally requested "
+                        "has been fully completed based on the conversation above."
+                    ),
+                }
+            ]
             verification = await self._llm.plan(
                 system=(
                     "You are a task-completion verifier. Given the conversation, determine "
@@ -786,15 +908,17 @@ class ChatSession:
             if "STATUS: STUCK" in status_text:
                 # Stuck — inject diagnosis request and let the LLM explain
                 reason = (verification.content or "").strip()
-                self._history.append({
-                    "role": "user",
-                    "content": (
-                        f"SYSTEM: Task verification determined this task is stuck.\n"
-                        f"Verifier assessment: {reason}\n\n"
-                        "Explain to the user what went wrong, what you tried, and "
-                        "suggest specific next steps they can take to unblock this."
-                    ),
-                })
+                self._history.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            f"SYSTEM: Task verification determined this task is stuck.\n"
+                            f"Verifier assessment: {reason}\n\n"
+                            "Explain to the user what went wrong, what you tried, and "
+                            "suggest specific next steps they can take to unblock this."
+                        ),
+                    }
+                )
                 yield StreamTaskProgress(
                     phase="analyzing", message="Diagnosing blocked task..."
                 )
@@ -808,16 +932,18 @@ class ChatSession:
             # INCOMPLETE — continue working
             continuation += 1
             reason = (verification.content or "").strip()
-            self._history.append({
-                "role": "user",
-                "content": (
-                    f"SYSTEM: Task verification determined this task is not yet complete "
-                    f"(attempt {continuation}/{_MAX_CONTINUATIONS}).\n"
-                    f"Verifier assessment: {reason}\n\n"
-                    "Continue working on the original request. Pick up where you left off "
-                    "and finish the remaining work. Do not repeat work already done."
-                ),
-            })
+            self._history.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"SYSTEM: Task verification determined this task is not yet complete "
+                        f"(attempt {continuation}/{_MAX_CONTINUATIONS}).\n"
+                        f"Verifier assessment: {reason}\n\n"
+                        "Continue working on the original request. Pick up where you left off "
+                        "and finish the remaining work. Do not repeat work already done."
+                    ),
+                }
+            )
             yield StreamTaskProgress(
                 phase="analyzing",
                 message=f"Task incomplete — continuing ({continuation}/{_MAX_CONTINUATIONS})...",
@@ -918,10 +1044,9 @@ _DS_KNOWN_VARS: set[str] = set()
 
 
 def _register_secret_vars(engine_def: "DatasourceEngine") -> None:
-    """Record which DS_* var names correspond to secret fields for engine_def.
-    """
+    """Record which DS_* var names correspond to secret fields for engine_def."""
     all_fields = list(engine_def.fields)
-    for am in (engine_def.auth_methods or []):
+    for am in engine_def.auth_methods or []:
         all_fields.extend(am.fields)
     for f in all_fields:
         key = f"DS_{f.name.upper()}"
@@ -989,15 +1114,16 @@ def _build_runtime_context(settings: AntonSettings) -> str:
         f"- Workspace: {settings.workspace_path}\n"
         f"- Memory mode: {settings.memory_mode}"
     )
-    if settings.minds_api_key and (settings.minds_mind_name or settings.minds_datasource):
+    if settings.minds_api_key and (
+        settings.minds_mind_name or settings.minds_datasource
+    ):
         engine = settings.minds_datasource_engine or "unknown"
         ctx += f"\n\n**CONNECTED MIND (Minds):**\n"
         if settings.minds_mind_name:
             ctx += f"- Mind: {settings.minds_mind_name}\n"
         if settings.minds_datasource:
             ctx += (
-                f"- Datasource: {settings.minds_datasource}\n"
-                f"- Engine: {engine}\n"
+                f"- Datasource: {settings.minds_datasource}\n" f"- Engine: {engine}\n"
             )
         ctx += (
             f"- Minds URL: {settings.minds_url}\n"
@@ -1039,7 +1165,8 @@ def _rebuild_session(
 
     runtime_context = _build_runtime_context(settings)
     api_key = (
-        settings.anthropic_api_key if settings.coding_provider == "anthropic"
+        settings.anthropic_api_key
+        if settings.coding_provider == "anthropic"
         else settings.openai_api_key
     ) or ""
     return ChatSession(
@@ -1089,17 +1216,34 @@ def _handle_memory(
         identity = hc.recall_identity()
         rules = hc.recall_rules()
         lessons_raw = hc._read_full_lessons()
-        rule_count = sum(1 for ln in rules.splitlines() if ln.strip().startswith("- ")) if rules else 0
-        lesson_count = sum(1 for ln in lessons_raw.splitlines() if ln.strip().startswith("- ")) if lessons_raw else 0
+        rule_count = (
+            sum(1 for ln in rules.splitlines() if ln.strip().startswith("- "))
+            if rules
+            else 0
+        )
+        lesson_count = (
+            sum(1 for ln in lessons_raw.splitlines() if ln.strip().startswith("- "))
+            if lessons_raw
+            else 0
+        )
         topics: list[str] = []
         if hc._topics_dir.is_dir():
-            topics = [p.stem for p in sorted(hc._topics_dir.iterdir()) if p.suffix == ".md"]
+            topics = [
+                p.stem for p in sorted(hc._topics_dir.iterdir()) if p.suffix == ".md"
+            ]
 
         console.print(f"  [anton.cyan]{label}[/] [dim]({hc._dir})[/]")
         if identity:
-            entries = [ln.strip()[2:] for ln in identity.splitlines() if ln.strip().startswith("- ")]
+            entries = [
+                ln.strip()[2:]
+                for ln in identity.splitlines()
+                if ln.strip().startswith("- ")
+            ]
             if entries:
-                console.print(f"    Identity:  {', '.join(entries[:3])}" + (" ..." if len(entries) > 3 else ""))
+                console.print(
+                    f"    Identity:  {', '.join(entries[:3])}"
+                    + (" ..." if len(entries) > 3 else "")
+                )
             else:
                 console.print("    Identity:  [dim](set)[/]")
         else:
@@ -1230,7 +1374,9 @@ async def _handle_resume(
     new_session._turn_count = sum(1 for m in history if m.get("role") == "user")
 
     console.print()
-    console.print(f"[anton.success]Resumed session from {selected['date']} ({selected['turns']} turns)[/]")
+    console.print(
+        f"[anton.success]Resumed session from {selected['date']} ({selected['turns']} turns)[/]"
+    )
     console.print()
 
     return new_session, sid
@@ -1272,9 +1418,16 @@ async def _handle_setup(
         return session
     elif top_choice == "1":
         return await _handle_setup_models(
-            console, settings, workspace, state,
-            self_awareness, cortex, session, episodic=episodic,
-            history_store=history_store, session_id=session_id,
+            console,
+            settings,
+            workspace,
+            state,
+            self_awareness,
+            cortex,
+            session,
+            episodic=episodic,
+            history_store=history_store,
+            session_id=session_id,
         )
     else:
         _handle_setup_memory(console, settings, workspace, cortex, episodic=episodic)
@@ -1311,11 +1464,19 @@ async def _handle_setup_models(
 
     # --- Provider ---
     providers = {"1": "anthropic", "2": "openai", "3": "openai-compatible"}
-    current_num = {"anthropic": "1", "openai": "2", "openai-compatible": "3"}.get(settings.planning_provider, "1")
+    current_num = {"anthropic": "1", "openai": "2", "openai-compatible": "3"}.get(
+        settings.planning_provider, "1"
+    )
     console.print("[anton.cyan]Available providers:[/]")
-    console.print(r"  [bold]1[/]  Anthropic (Claude)                    [dim]\[recommended][/]")
-    console.print(r"  [bold]2[/]  OpenAI (GPT / o-series)               [dim]\[experimental][/]")
-    console.print(r"  [bold]3[/]  OpenAI-compatible (custom endpoint)   [dim]\[experimental][/]")
+    console.print(
+        r"  [bold]1[/]  Anthropic (Claude)                    [dim]\[recommended][/]"
+    )
+    console.print(
+        r"  [bold]2[/]  OpenAI (GPT / o-series)               [dim]\[experimental][/]"
+    )
+    console.print(
+        r"  [bold]3[/]  OpenAI-compatible (custom endpoint)   [dim]\[experimental][/]"
+    )
     console.print()
 
     choice = Prompt.ask(
@@ -1343,7 +1504,9 @@ async def _handle_setup_models(
     # --- API key ---
     key_attr = "anthropic_api_key" if provider == "anthropic" else "openai_api_key"
     current_key = getattr(settings, key_attr) or ""
-    masked = current_key[:4] + "..." + current_key[-4:] if len(current_key) > 8 else "***"
+    masked = (
+        current_key[:4] + "..." + current_key[-4:] if len(current_key) > 8 else "***"
+    )
     console.print()
     api_key = Prompt.ask(
         f"API key for {provider.title()} [dim](Enter to keep {masked})[/]",
@@ -1362,12 +1525,20 @@ async def _handle_setup_models(
     console.print()
     planning_model = Prompt.ask(
         "Planning model",
-        default=settings.planning_model if provider == settings.planning_provider else default_planning,
+        default=(
+            settings.planning_model
+            if provider == settings.planning_provider
+            else default_planning
+        ),
         console=console,
     )
     coding_model = Prompt.ask(
         "Coding model",
-        default=settings.coding_model if provider == settings.coding_provider else default_coding,
+        default=(
+            settings.coding_model
+            if provider == settings.coding_provider
+            else default_coding
+        ),
         console=console,
     )
 
@@ -1391,7 +1562,9 @@ async def _handle_setup_models(
     final_key = getattr(settings, key_attr)
     if not final_key:
         console.print()
-        console.print(f"[anton.error]No API key set for {provider}. Configuration not applied.[/]")
+        console.print(
+            f"[anton.error]No API key set for {provider}. Configuration not applied.[/]"
+        )
         console.print()
         return session
 
@@ -1428,9 +1601,15 @@ def _handle_setup_memory(
 
     # --- Memory mode ---
     console.print("  Memory mode:")
-    console.print(r"    [bold]1[/]  Autopilot — Anton decides what to remember       [dim]\[recommended][/]")
-    console.print(r"    [bold]2[/]  Co-pilot — save obvious, confirm ambiguous        [dim]\[selective][/]")
-    console.print(r"    [bold]3[/]  Off — never save memory (still reads existing)    [dim]\[suppressed][/]")
+    console.print(
+        r"    [bold]1[/]  Autopilot — Anton decides what to remember       [dim]\[recommended][/]"
+    )
+    console.print(
+        r"    [bold]2[/]  Co-pilot — save obvious, confirm ambiguous        [dim]\[selective][/]"
+    )
+    console.print(
+        r"    [bold]3[/]  Off — never save memory (still reads existing)    [dim]\[suppressed][/]"
+    )
     console.print()
 
     mode_map = {"1": "autopilot", "2": "copilot", "3": "off"}
@@ -1453,7 +1632,9 @@ def _handle_setup_memory(
     if episodic is not None:
         console.print()
         ep_status = "ON" if episodic.enabled else "OFF"
-        console.print(f"  Episodic memory (conversation archive): Currently [bold]{ep_status}[/]")
+        console.print(
+            f"  Episodic memory (conversation archive): Currently [bold]{ep_status}[/]"
+        )
         toggle = Prompt.ask(
             "  Toggle episodic memory? (y/n)",
             choices=["y", "n"],
@@ -1464,7 +1645,9 @@ def _handle_setup_memory(
             new_state = not episodic.enabled
             episodic.enabled = new_state
             settings.episodic_memory = new_state
-            workspace.set_secret("ANTON_EPISODIC_MEMORY", "true" if new_state else "false")
+            workspace.set_secret(
+                "ANTON_EPISODIC_MEMORY", "true" if new_state else "false"
+            )
             console.print(f"  Episodic memory: [bold]{'ON' if new_state else 'OFF'}[/]")
 
     console.print()
@@ -1547,7 +1730,10 @@ def _describe_minds_connection_error(err: Exception) -> tuple[str, str]:
                 "Connection failed during TLS certificate verification.",
                 "Common reasons: a self-signed, expired, or otherwise untrusted certificate.",
             )
-        if isinstance(reason, (TimeoutError, socket.timeout)) or "timed out" in str(reason).lower():
+        if (
+            isinstance(reason, (TimeoutError, socket.timeout))
+            or "timed out" in str(reason).lower()
+        ):
             return (
                 "Connection failed because the request timed out.",
                 "Common reasons: the server is slow or unavailable, the URL is wrong, or there is a network path issue.",
@@ -1590,7 +1776,10 @@ def _minds_request(
     req.add_header("Content-Type", "application/json")
     req.add_header("Accept", "application/json")
     # Browser-like headers to avoid Cloudflare bot detection
-    req.add_header("User-Agent", "Mozilla/5.0 (compatible; Anton/1.0; +https://github.com/mindsdb/anton)")
+    req.add_header(
+        "User-Agent",
+        "Mozilla/5.0 (compatible; Anton/1.0; +https://github.com/mindsdb/anton)",
+    )
     req.add_header("Accept-Language", "en-US,en;q=0.9")
     req.add_header("Accept-Encoding", "identity")
     req.add_header("Connection", "keep-alive")
@@ -1618,7 +1807,9 @@ def _minds_list_minds(base_url: str, api_key: str, verify: bool = True) -> list[
     return data.get("minds", data if isinstance(data, list) else [])
 
 
-def _minds_get_mind(base_url: str, api_key: str, mind_name: str, verify: bool = True) -> dict | None:
+def _minds_get_mind(
+    base_url: str, api_key: str, mind_name: str, verify: bool = True
+) -> dict | None:
     """Fetch a single mind's details from a Minds server."""
     import json as _json
 
@@ -1661,7 +1852,9 @@ def _minds_refresh_knowledge(settings: AntonSettings, cortex) -> None:
     cortex.project_hc._encode_with_lock(topic_path, topic_content, mode="write")
 
 
-def _minds_list_datasources(base_url: str, api_key: str, verify: bool = True) -> list[dict]:
+def _minds_list_datasources(
+    base_url: str, api_key: str, verify: bool = True
+) -> list[dict]:
     """Fetch datasource list from a Minds server using stdlib urllib."""
     import json as _json
 
@@ -1680,11 +1873,13 @@ def _minds_test_llm(base_url: str, api_key: str, verify: bool = True) -> bool:
     import json as _json
 
     url = f"{base_url}/api/v1/chat/completions"
-    payload = _json.dumps({
-        "model": "_code_",
-        "messages": [{"role": "user", "content": "ping"}],
-        "max_tokens": 1,
-    }).encode()
+    payload = _json.dumps(
+        {
+            "model": "_code_",
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 1,
+        }
+    ).encode()
 
     try:
         _minds_request(url, api_key, method="POST", payload=payload, verify=verify)
@@ -1694,14 +1889,22 @@ def _minds_test_llm(base_url: str, api_key: str, verify: bool = True) -> bool:
 
 
 _MINDS_KEYS = {
-    "ANTON_MINDS_API_KEY", "ANTON_MINDS_URL", "ANTON_MINDS_MIND_NAME",
-    "ANTON_MINDS_DATASOURCE", "ANTON_MINDS_DATASOURCE_ENGINE", "ANTON_MINDS_SSL_VERIFY",
+    "ANTON_MINDS_API_KEY",
+    "ANTON_MINDS_URL",
+    "ANTON_MINDS_MIND_NAME",
+    "ANTON_MINDS_DATASOURCE",
+    "ANTON_MINDS_DATASOURCE_ENGINE",
+    "ANTON_MINDS_SSL_VERIFY",
 }
 
 _LLM_KEYS = {
-    "ANTON_PLANNING_PROVIDER", "ANTON_CODING_PROVIDER",
-    "ANTON_PLANNING_MODEL", "ANTON_CODING_MODEL",
-    "ANTON_ANTHROPIC_API_KEY", "ANTON_OPENAI_API_KEY", "ANTON_OPENAI_BASE_URL",
+    "ANTON_PLANNING_PROVIDER",
+    "ANTON_CODING_PROVIDER",
+    "ANTON_PLANNING_MODEL",
+    "ANTON_CODING_MODEL",
+    "ANTON_ANTHROPIC_API_KEY",
+    "ANTON_OPENAI_API_KEY",
+    "ANTON_OPENAI_BASE_URL",
 }
 
 _SECRET_PATTERNS = ("KEY", "TOKEN", "SECRET", "PAT", "PASSWORD")
@@ -1736,7 +1939,9 @@ async def _handle_data_connections(
 
     # Merge with source tags: project keys override global for display,
     # but we track where each lives for writes/removals.
-    all_keys: dict[str, tuple[str, str, str]] = {}  # key -> (value, source, scope_label)
+    all_keys: dict[str, tuple[str, str, str]] = (
+        {}
+    )  # key -> (value, source, scope_label)
     for k, v in global_env.items():
         all_keys[k] = (v, "global", "~/.anton/.env")
     for k, v in project_env.items():
@@ -1746,7 +1951,9 @@ async def _handle_data_connections(
 
     if not all_keys:
         console.print("[anton.warning]No connections or secrets configured.[/]")
-        console.print("[anton.muted]Use /connect to set up a Minds connection, or ask Anton to store a key.[/]")
+        console.print(
+            "[anton.muted]Use /connect to set up a Minds connection, or ask Anton to store a key.[/]"
+        )
         console.print()
         return session
 
@@ -1754,7 +1961,11 @@ async def _handle_data_connections(
         """Print grouped key table and return flat list for menu selection."""
         minds = {k: all_keys[k] for k in sorted(all_keys) if k in _MINDS_KEYS}
         llm = {k: all_keys[k] for k in sorted(all_keys) if k in _LLM_KEYS}
-        other = {k: all_keys[k] for k in sorted(all_keys) if k not in _MINDS_KEYS and k not in _LLM_KEYS}
+        other = {
+            k: all_keys[k]
+            for k in sorted(all_keys)
+            if k not in _MINDS_KEYS and k not in _LLM_KEYS
+        }
 
         flat: list[tuple[str, str, str, str]] = []  # (key, value, source, scope_label)
         idx = 1
@@ -1762,7 +1973,9 @@ async def _handle_data_connections(
         if minds:
             console.print("[anton.cyan]Minds Connection[/]")
             for k, (v, src, lbl) in minds.items():
-                console.print(f"    [bold]{idx}[/]  {k} = {_display_value(k, v)}  [dim]({lbl})[/]")
+                console.print(
+                    f"    [bold]{idx}[/]  {k} = {_display_value(k, v)}  [dim]({lbl})[/]"
+                )
                 flat.append((k, v, src, lbl))
                 idx += 1
             console.print()
@@ -1770,7 +1983,9 @@ async def _handle_data_connections(
         if llm:
             console.print("[anton.cyan]LLM Configuration[/]")
             for k, (v, src, lbl) in llm.items():
-                console.print(f"    [bold]{idx}[/]  {k} = {_display_value(k, v)}  [dim]({lbl})[/]")
+                console.print(
+                    f"    [bold]{idx}[/]  {k} = {_display_value(k, v)}  [dim]({lbl})[/]"
+                )
                 flat.append((k, v, src, lbl))
                 idx += 1
             console.print()
@@ -1778,7 +1993,9 @@ async def _handle_data_connections(
         if other:
             console.print("[anton.cyan]Other Integrations[/]")
             for k, (v, src, lbl) in other.items():
-                console.print(f"    [bold]{idx}[/]  {k} = {_display_value(k, v)}  [dim]({lbl})[/]")
+                console.print(
+                    f"    [bold]{idx}[/]  {k} = {_display_value(k, v)}  [dim]({lbl})[/]"
+                )
                 flat.append((k, v, src, lbl))
                 idx += 1
             console.print()
@@ -1796,7 +2013,9 @@ async def _handle_data_connections(
         console.print("  [bold]q[/]  Back")
         console.print()
 
-        action = Prompt.ask("Select", choices=["1", "2", "3", "q"], default="q", console=console)
+        action = Prompt.ask(
+            "Select", choices=["1", "2", "3", "q"], default="q", console=console
+        )
 
         if action == "q":
             console.print()
@@ -1855,7 +2074,9 @@ async def _handle_data_connections(
                 continue
 
             key, _, src, lbl = flat[pick_idx]
-            if not Confirm.ask(f"Remove {key} from {lbl}?", default=False, console=console):
+            if not Confirm.ask(
+                f"Remove {key} from {lbl}?", default=False, console=console
+            ):
                 console.print("[anton.muted]Cancelled.[/]")
                 console.print()
                 continue
@@ -1869,14 +2090,20 @@ async def _handle_data_connections(
         elif action == "3":
             # --- Add ---
             console.print()
-            new_key = Prompt.ask("Key name (e.g. HUBSPOT_API_KEY)", console=console).strip()
+            new_key = Prompt.ask(
+                "Key name (e.g. HUBSPOT_API_KEY)", console=console
+            ).strip()
             if not new_key:
                 console.print("[anton.warning]Key name cannot be empty.[/]")
                 console.print()
                 continue
 
             if new_key in all_keys:
-                if not Confirm.ask(f"{new_key} already exists. Overwrite?", default=False, console=console):
+                if not Confirm.ask(
+                    f"{new_key} already exists. Overwrite?",
+                    default=False,
+                    console=console,
+                ):
                     console.print("[anton.muted]Cancelled.[/]")
                     console.print()
                     continue
@@ -1899,7 +2126,11 @@ async def _handle_data_connections(
                 console=console,
             )
             target_ws = global_ws if scope == "global" else workspace
-            scope_label = "~/.anton/.env" if scope == "global" else f"{workspace.base}/.anton/.env"
+            scope_label = (
+                "~/.anton/.env"
+                if scope == "global"
+                else f"{workspace.base}/.anton/.env"
+            )
             target_ws.set_secret(new_key, new_val)
             target_ws.apply_env_to_process()
             all_keys[new_key] = (new_val, scope, scope_label)
@@ -2007,7 +2238,11 @@ async def _handle_connect(
         name = mind.get("name", "?")
         ds_list = mind.get("datasources", [])
         ds_count = len(ds_list)
-        ds_label = f"{ds_count} datasource{'s' if ds_count != 1 else ''}" if ds_count else "no datasources"
+        ds_label = (
+            f"{ds_count} datasource{'s' if ds_count != 1 else ''}"
+            if ds_count
+            else "no datasources"
+        )
         console.print(f"    [bold]{i}[/]  {name} [dim]({ds_label})[/]")
     console.print()
 
@@ -2041,7 +2276,9 @@ async def _handle_connect(
     # --- Resolve engine type from datasources list ---
     if ds_name:
         try:
-            all_datasources = _minds_list_datasources(minds_url, api_key, verify=ssl_verify)
+            all_datasources = _minds_list_datasources(
+                minds_url, api_key, verify=ssl_verify
+            )
             for ds in all_datasources:
                 if ds.get("name") == ds_name:
                     ds_engine = ds.get("engine", "unknown")
@@ -2075,7 +2312,9 @@ async def _handle_connect(
     llm_ok = _minds_test_llm(minds_url, api_key, verify=ssl_verify)
 
     if llm_ok:
-        console.print("[anton.success]LLM endpoints available — using Minds server as LLM provider.[/]")
+        console.print(
+            "[anton.success]LLM endpoints available — using Minds server as LLM provider.[/]"
+        )
         base_url = f"{minds_url.rstrip('/')}/api/v1"
         settings.openai_api_key = api_key
         settings.openai_base_url = base_url
@@ -2091,7 +2330,9 @@ async def _handle_connect(
         global_ws.set_secret("ANTON_CODING_MODEL", "_code_")
     else:
         # Check if Anthropic key is already configured
-        has_anthropic = settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
+        has_anthropic = settings.anthropic_api_key or os.environ.get(
+            "ANTHROPIC_API_KEY"
+        )
         if not has_anthropic:
             anthropic_key = Prompt.ask("Anthropic API key (for LLM)", console=console)
             if anthropic_key.strip():
@@ -2108,14 +2349,21 @@ async def _handle_connect(
                 global_ws.set_secret("ANTON_CODING_MODEL", "claude-haiku-4-5-20251001")
                 console.print("[anton.success]Anthropic API key saved.[/]")
             else:
-                console.print("[anton.warning]No API key provided — LLM calls will not work.[/]")
+                console.print(
+                    "[anton.warning]No API key provided — LLM calls will not work.[/]"
+                )
 
     global_ws.apply_env_to_process()
     console.print()
 
     return _rebuild_session(
-        settings=settings, state=state, self_awareness=self_awareness,
-        cortex=cortex, workspace=workspace, console=console, episodic=episodic,
+        settings=settings,
+        state=state,
+        self_awareness=self_awareness,
+        cortex=cortex,
+        workspace=workspace,
+        console=console,
+        episodic=episodic,
     )
 
 
@@ -2151,30 +2399,55 @@ def _format_file_message(text: str, paths: list[Path], console: Console) -> str:
 
         # Skip very large files (>500KB) — just reference them
         if size > 512_000:
-            parts.append(f"\n<file path=\"{p}\">\n(File too large to inline — {_human_size(size)}. "
-                         f"Use the scratchpad to read it.)\n</file>")
+            parts.append(
+                f'\n<file path="{p}">\n(File too large to inline — {_human_size(size)}. '
+                f"Use the scratchpad to read it.)\n</file>"
+            )
             continue
 
         # Skip binary-looking files
-        if suffix in (".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp",
-                       ".pdf", ".zip", ".tar", ".gz", ".exe", ".dll", ".so",
-                       ".pyc", ".pyo", ".whl", ".egg", ".db", ".sqlite"):
-            parts.append(f"\n<file path=\"{p}\">\n(Binary file — {_human_size(size)}. "
-                         f"Use the scratchpad to process it.)\n</file>")
+        if suffix in (
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".ico",
+            ".webp",
+            ".pdf",
+            ".zip",
+            ".tar",
+            ".gz",
+            ".exe",
+            ".dll",
+            ".so",
+            ".pyc",
+            ".pyo",
+            ".whl",
+            ".egg",
+            ".db",
+            ".sqlite",
+        ):
+            parts.append(
+                f'\n<file path="{p}">\n(Binary file — {_human_size(size)}. '
+                f"Use the scratchpad to process it.)\n</file>"
+            )
             continue
 
         try:
             content = p.read_text(errors="replace")
         except Exception:
-            parts.append(f"\n<file path=\"{p}\">\n(Could not read file.)\n</file>")
+            parts.append(f'\n<file path="{p}">\n(Could not read file.)\n</file>')
             continue
 
-        parts.append(f"\n<file path=\"{p}\">\n{content}\n</file>")
+        parts.append(f'\n<file path="{p}">\n{content}\n</file>')
 
     return "\n".join(parts)
 
 
-def _format_clipboard_image_message(uploaded: object, user_text: str = "") -> list[dict]:
+def _format_clipboard_image_message(
+    uploaded: object, user_text: str = ""
+) -> list[dict]:
     """Build a multimodal LLM message for a clipboard image upload.
 
     Returns a list of content blocks (image + text) so the LLM can see
@@ -2183,7 +2456,11 @@ def _format_clipboard_image_message(uploaded: object, user_text: str = "") -> li
     """
     import base64
 
-    text = user_text.strip() if user_text else "I've pasted an image from my clipboard. Analyze it."
+    text = (
+        user_text.strip()
+        if user_text
+        else "I've pasted an image from my clipboard. Analyze it."
+    )
     text += (
         f"\n\nThe image is also saved at: {uploaded.path}\n"
         f"({uploaded.width}x{uploaded.height}, {_human_size(uploaded.size_bytes)}). "
@@ -2229,6 +2506,7 @@ async def _ensure_clipboard(console: Console) -> bool:
         return False
     console.print("[anton.muted]Installing Pillow...[/]")
     import subprocess
+
     proc = await asyncio.get_event_loop().run_in_executor(
         None,
         lambda: subprocess.run(
@@ -2251,7 +2529,9 @@ async def _ensure_clipboard(console: Console) -> bool:
             ),
         )
         if proc.returncode == 0:
-            console.print("[anton.success]Pillow installed. Clipboard is now available.[/]")
+            console.print(
+                "[anton.success]Pillow installed. Clipboard is now available.[/]"
+            )
             return True
         console.print("[anton.error]Failed to install Pillow.[/]")
         return False
@@ -2289,23 +2569,27 @@ async def _handle_add_custom_datasource(
     try:
         response = await session._llm.plan(
             system="You are a data source connection expert.",
-            messages=[{
-                "role": "user",
-                "content": (
-                    f"The user wants to connect to '{name}' and said: {user_answer}\n\n"
-                    "Return ONLY valid JSON (no markdown fences, no commentary):\n"
-                    '{"display_name":"Human-readable name","pip":"pip-package or empty string",'
-                    '"fields":[{"name":"snake_case_name","value":"value if given inline else empty",'
-                    '"secret":true or false,"required":true or false,"description":"what it is"}]}'
-                ),
-            }],
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"The user wants to connect to '{name}' and said: {user_answer}\n\n"
+                        "Return ONLY valid JSON (no markdown fences, no commentary):\n"
+                        '{"display_name":"Human-readable name","pip":"pip-package or empty string",'
+                        '"fields":[{"name":"snake_case_name","value":"value if given inline else empty",'
+                        '"secret":true or false,"required":true or false,"description":"what it is"}]}'
+                    ),
+                }
+            ],
             max_tokens=1024,
         )
         text = response.content.strip()
         text = _re.sub(r"^```[^\n]*\n|```\s*$", "", text, flags=_re.MULTILINE).strip()
         data = _json.loads(text)
     except Exception:
-        console.print("[anton.warning]        Couldn't identify connection details. Try again.[/]")
+        console.print(
+            "[anton.warning]        Couldn't identify connection details. Try again.[/]"
+        )
         console.print()
         return None
 
@@ -2314,12 +2598,14 @@ async def _handle_add_custom_datasource(
     for f in raw_fields:
         if not isinstance(f, dict) or not f.get("name"):
             continue
-        fields.append(DatasourceField(
-            name=f["name"],
-            required=bool(f.get("required", True)),
-            secret=bool(f.get("secret", False)),
-            description=str(f.get("description", "")),
-        ))
+        fields.append(
+            DatasourceField(
+                name=f["name"],
+                required=bool(f.get("required", True)),
+                secret=bool(f.get("secret", False)),
+                description=str(f.get("description", "")),
+            )
+        )
 
     if not fields:
         console.print("[anton.warning]    Couldn't identify any connection fields.[/]")
@@ -2336,10 +2622,14 @@ async def _handle_add_custom_datasource(
     for f, raw in zip(fields, raw_fields):
         inline_value = str(raw.get("value", "")).strip()
         if f.secret and inline_value:
-            console.print(f"        • [bold]{f.name:<14}[/] (secret — provided, stored securely)")
+            console.print(
+                f"        • [bold]{f.name:<14}[/] (secret — provided, stored securely)"
+            )
             credentials[f.name] = inline_value
         elif f.secret:
-            console.print(f"        • [bold]{f.name:<14}[/] (secret — I'll ask for this)")
+            console.print(
+                f"        • [bold]{f.name:<14}[/] (secret — I'll ask for this)"
+            )
         else:
             val_display = inline_value or "[anton.muted]<to be collected>[/]"
             console.print(f"        • [bold]{f.name:<14}[/] {val_display}")
@@ -2371,7 +2661,7 @@ async def _handle_add_custom_datasource(
     slug = _re.sub(r"[^\w]", "_", display_name.lower()).strip("_")
     field_lines = "\n".join(
         f"  - {{ name: {f.name}, required: {str(f.required).lower()}, "
-        f"secret: {str(f.secret).lower()}, description: \"{f.description}\" }}"
+        f'secret: {str(f.secret).lower()}, description: "{f.description}" }}'
         for f in fields
     )
     yaml_block = (
@@ -2387,12 +2677,15 @@ async def _handle_add_custom_datasource(
     tmp_path = user_ds_path.with_suffix(".tmp")
 
     # Write to temp, validate it parses, then rename atomically
-    existing = user_ds_path.read_text(encoding="utf-8") if user_ds_path.is_file() else ""
+    existing = (
+        user_ds_path.read_text(encoding="utf-8") if user_ds_path.is_file() else ""
+    )
     tmp_path.write_text(existing + yaml_block, encoding="utf-8")
 
     parsed = _ds_parse_file(tmp_path)
     if slug in parsed:
         import shutil
+
         shutil.move(str(tmp_path), str(user_ds_path))
     else:
         tmp_path.unlink(missing_ok=True)
@@ -2419,13 +2712,151 @@ async def _handle_connect_datasource(
     console: Console,
     scratchpads: ScratchpadManager,
     session: "ChatSession",
+    datasource_name: str | None = None,
 ) -> "ChatSession":
-    """Interactive flow for connecting a new data source to the Local Vault."""
-    from rich.prompt import Prompt
+    """
+    Connect a data source by entering credentials, either for a new name or re-entering for an existing one.
+    """
 
     vault = DataVault()
     registry = DatasourceRegistry()
 
+    # ── /edit-data-source path: re-enter credentials for an existing slug ─────
+    if datasource_name is not None:
+        slug_parts = datasource_name.split("-", 1)
+        if len(slug_parts) != 2:
+            console.print(
+                f"[anton.warning]Invalid slug '{datasource_name}'. "
+                "Expected format: engine-name.[/]"
+            )
+            console.print()
+            return session
+        edit_engine, edit_name = slug_parts
+        if vault.load(edit_engine, edit_name) is None:
+            console.print(
+                f"[anton.warning]No connection '{datasource_name}' found in Local Vault.[/]"
+            )
+            console.print()
+            return session
+        engine_def = registry.get(edit_engine)
+        if engine_def is None:
+            console.print(
+                f"[anton.warning]Unknown engine '{edit_engine}'. "
+                "Cannot update credentials.[/]"
+            )
+            console.print()
+            return session
+
+        console.print()
+        console.print(
+            f"[anton.cyan](anton)[/] Updating credentials for "
+            f'[bold]"{datasource_name}"[/bold] ({engine_def.display_name}).'
+        )
+        console.print()
+
+        credentials: dict[str, str] = {}
+        for f in engine_def.fields:
+            prompt_label = f"[anton.cyan](anton)[/] {f.name}"
+            if not f.required:
+                prompt_label += " [anton.muted](optional, press enter to skip)[/]"
+            if f.secret:
+                value = Prompt.ask(
+                    prompt_label, password=True, console=console, default=""
+                )
+            elif f.default:
+                value = Prompt.ask(
+                    f"{prompt_label} [anton.muted][{f.default}][/]",
+                    console=console,
+                    default=f.default,
+                )
+            else:
+                value = Prompt.ask(prompt_label, console=console, default="")
+            if value:
+                credentials[f.name] = value
+
+        if engine_def.test_snippet:
+            while True:
+                console.print()
+                console.print("[anton.cyan](anton)[/] Got it. Testing connection…")
+                import os as _os
+
+                for key, value in credentials.items():
+                    _os.environ[f"DS_{key.upper()}"] = value
+                try:
+                    pad = await scratchpads.get_or_create("__datasource_test__")
+                    await pad.reset()
+                    if engine_def.pip:
+                        await pad.install_packages([engine_def.pip])
+                    cell = await pad.execute(engine_def.test_snippet)
+                finally:
+                    ds_keys = [k for k in _os.environ if k.startswith("DS_")]
+                    for k in ds_keys:
+                        del _os.environ[k]
+
+                if cell.error or (cell.stdout.strip() != "ok" and cell.stderr.strip()):
+                    error_text = (
+                        cell.error or cell.stderr.strip() or cell.stdout.strip()
+                    )
+                    first_line = next(
+                        (ln for ln in error_text.splitlines() if ln.strip()), error_text
+                    )
+                    console.print()
+                    console.print("[anton.warning](anton)[/] ✗ Connection failed.")
+                    console.print()
+                    console.print(f"        Error: {first_line}")
+                    console.print()
+                    retry = (
+                        Prompt.ask(
+                            "[anton.cyan](anton)[/] Would you like to re-enter your credentials? [y/n]",
+                            console=console,
+                            default="n",
+                        )
+                        .strip()
+                        .lower()
+                    )
+                    if retry != "y":
+                        return session
+                    console.print()
+                    for f in engine_def.fields:
+                        if not f.secret:
+                            continue
+                        value = Prompt.ask(
+                            f"[anton.cyan](anton)[/] {f.name}",
+                            password=True,
+                            console=console,
+                            default="",
+                        )
+                        if value:
+                            credentials[f.name] = value
+                    continue
+
+                console.print("[anton.success]        ✓ Connected successfully![/]")
+                break
+
+        vault.save(edit_engine, edit_name, credentials)
+        vault.inject_env(edit_engine, edit_name)
+        _register_secret_vars(engine_def)
+        console.print()
+        console.print(
+            f'        Credentials updated for [bold]"{datasource_name}"[/bold].'
+        )
+        console.print()
+        console.print(
+            "[anton.muted]        You can now ask me questions about your data.[/]"
+        )
+        console.print()
+        session._history.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f"I've updated the credentials for the {engine_def.display_name} connection "
+                    f'"{datasource_name}" in the Local Vault.'
+                ),
+            }
+        )
+        return session
+
+    # ── Normal flow: connect a new (or reconnect an existing) data source ─────
     console.print()
     engine_names = ", ".join(e.display_name for e in registry.all_engines())
     answer = Prompt.ask(
@@ -2433,18 +2864,48 @@ async def _handle_connect_datasource(
         f"        [anton.muted](e.g. {engine_names})[/]\n",
         console=console,
     )
-    engine_def = registry.find_by_name(answer.strip())
+
+    # ── Reconnect path: user typed an existing vault slug ─────────────────────
+    stripped_answer = answer.strip()
+    known_slugs = {f"{c['engine']}-{c['name']}": c for c in vault.list_connections()}
+    if stripped_answer in known_slugs:
+        conn = known_slugs[stripped_answer]
+        vault.inject_env(conn["engine"], conn["name"])
+        recon_engine_def = registry.get(conn["engine"])
+        if recon_engine_def:
+            _register_secret_vars(recon_engine_def)
+            engine_label = recon_engine_def.display_name
+        else:
+            engine_label = conn["engine"]
+        console.print()
+        console.print(
+            f'[anton.success]        ✓ Reconnected to [bold]"{stripped_answer}"[/bold].[/]'
+        )
+        console.print()
+        session._history.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f'I\'ve reconnected to the {engine_label} connection "{stripped_answer}" '
+                    f"in the Local Vault. I can now query this data source when needed."
+                ),
+            }
+        )
+        return session
+
+    engine_def = registry.find_by_name(stripped_answer)
     if engine_def is None:
         # Check whether the input is ambiguous before treating it as unknown
-        needle = answer.strip().lower()
+        needle = stripped_answer.lower()
         candidates = [
-            e for e in registry.all_engines()
+            e
+            for e in registry.all_engines()
             if needle in e.display_name.lower() or needle in e.engine.lower()
         ]
         if len(candidates) > 1:
             console.print()
             console.print(
-                f"[anton.warning](anton)[/] '{answer}' matches multiple engines — "
+                f"[anton.warning](anton)[/] '{stripped_answer}' matches multiple engines — "
                 "which one did you mean?"
             )
             console.print()
@@ -2462,7 +2923,9 @@ async def _handle_connect_datasource(
                 console.print()
                 return session
         else:
-            result = await _handle_add_custom_datasource(console, answer.strip(), registry, session)
+            result = await _handle_add_custom_datasource(
+                console, stripped_answer, registry, session
+            )
             if result is None:
                 return session
             engine_def, credentials = result
@@ -2470,16 +2933,18 @@ async def _handle_connect_datasource(
             vault.save(engine_def.engine, str(conn_num), credentials)
             slug = f"{engine_def.engine}-{conn_num}"
             console.print(
-                f"        Credentials saved to Local Vault as [bold]\"{slug}\"[/bold]."
+                f'        Credentials saved to Local Vault as [bold]"{slug}"[/bold].'
             )
             console.print()
-            session._history.append({
-                "role": "assistant",
-                "content": (
-                    f"I've saved a {engine_def.display_name} connection named \"{slug}\" "
-                    f"to the Local Vault. I can now query this data source when needed."
-                ),
-            })
+            session._history.append(
+                {
+                    "role": "assistant",
+                    "content": (
+                        f'I\'ve saved a {engine_def.display_name} connection named "{slug}" '
+                        f"to the Local Vault. I can now query this data source when needed."
+                    ),
+                }
+            )
             return session
 
     # ── Step 2a: auth method choice (if engine requires it) ───────
@@ -2520,21 +2985,29 @@ async def _handle_connect_datasource(
     if required_fields:
         console.print("        [bold]Required[/]      " + "─" * 39)
         for f in required_fields:
-            console.print(f"        • [bold]{f.name:<12}[/] [anton.muted]— {f.description}[/]")
+            console.print(
+                f"        • [bold]{f.name:<12}[/] [anton.muted]— {f.description}[/]"
+            )
 
     if optional_fields:
         console.print()
         console.print("        [bold]Optional[/]      " + "─" * 39)
         for f in optional_fields:
-            console.print(f"        • [bold]{f.name:<12}[/] [anton.muted]— {f.description}[/]")
+            console.print(
+                f"        • [bold]{f.name:<12}[/] [anton.muted]— {f.description}[/]"
+            )
 
     console.print()
 
     # ── Step 3: determine collection mode ────────────────────────
-    mode_answer = Prompt.ask(
-        "[anton.cyan](anton)[/] Do you have these available? [y/n/<list params>]",
-        console=console,
-    ).strip().lower()
+    mode_answer = (
+        Prompt.ask(
+            "[anton.cyan](anton)[/] Do you have these available? [y/n/<list params>]",
+            console=console,
+        )
+        .strip()
+        .lower()
+    )
 
     if mode_answer == "n":
         console.print()
@@ -2590,7 +3063,7 @@ async def _handle_connect_datasource(
         console.print()
         console.print(
             f"[anton.muted]Partial connection saved to Local Vault as "
-            f"[bold]\"{slug}\"[/bold]. "
+            f'[bold]"{slug}"[/bold]. '
             f"Run [bold]/edit-data-source {slug}[/bold] to complete it when you're ready.[/]"
         )
         console.print()
@@ -2603,6 +3076,7 @@ async def _handle_connect_datasource(
 
             # Temporarily inject DS_* into os.environ (test before committing to vault)
             import os as _os
+
             for key, value in credentials.items():
                 _os.environ[f"DS_{key.upper()}"] = value
 
@@ -2632,11 +3106,15 @@ async def _handle_connect_datasource(
                 console.print(f"        Error: {first_line}")
                 console.print()
 
-                retry = Prompt.ask(
-                    "[anton.cyan](anton)[/] Would you like to re-enter your credentials? [y/n]",
-                    console=console,
-                    default="n",
-                ).strip().lower()
+                retry = (
+                    Prompt.ask(
+                        "[anton.cyan](anton)[/] Would you like to re-enter your credentials? [y/n]",
+                        console=console,
+                        default="n",
+                    )
+                    .strip()
+                    .lower()
+                )
 
                 if retry != "y":
                     return session
@@ -2666,25 +3144,65 @@ async def _handle_connect_datasource(
         n = vault.next_connection_number(engine_def.engine)
         conn_name = str(n)
 
+    slug = f"{engine_def.engine}-{conn_name}"
+
+    if vault.load(engine_def.engine, conn_name) is not None:
+        console.print()
+        console.print(
+            f'[anton.warning](anton)[/] A connection [bold]"{slug}"[/bold] already exists.'
+        )
+        console.print()
+        choice = (
+            Prompt.ask(
+                "[anton.cyan](anton)[/] [reconnect/cancel]",
+                console=console,
+                default="cancel",
+            )
+            .strip()
+            .lower()
+        )
+        if choice != "reconnect":
+            console.print("[anton.muted]Cancelled.[/]")
+            console.print()
+            return session
+        vault.inject_env(engine_def.engine, conn_name)
+        _register_secret_vars(engine_def)
+        console.print()
+        console.print(
+            f'[anton.success]        ✓ Reconnected to [bold]"{slug}"[/bold].[/]'
+        )
+        console.print()
+        session._history.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f'I\'ve reconnected to the {engine_def.display_name} connection "{slug}" '
+                    f"in the Local Vault. I can now query this data source when needed."
+                ),
+            }
+        )
+        return session
+
     vault.save(engine_def.engine, conn_name, credentials)
     _register_secret_vars(engine_def)
-    slug = f"{engine_def.engine}-{conn_name}"
-    console.print(
-        f"        Credentials saved to Local Vault as [bold]\"{slug}\"[/bold]."
-    )
+    console.print(f'        Credentials saved to Local Vault as [bold]"{slug}"[/bold].')
 
     console.print()
-    console.print("[anton.muted]        You can now ask me questions about your data.[/]")
+    console.print(
+        "[anton.muted]        You can now ask me questions about your data.[/]"
+    )
     console.print()
 
     # Inject a brief assistant message so the LLM is aware of the new connection
-    session._history.append({
-        "role": "assistant",
-        "content": (
-            f"I've saved a {engine_def.display_name} connection named \"{slug}\" "
-            f"to the Local Vault. I can now query this data source when needed."
-        ),
-    })
+    session._history.append(
+        {
+            "role": "assistant",
+            "content": (
+                f'I\'ve saved a {engine_def.display_name} connection named "{slug}" '
+                f"to the Local Vault. I can now query this data source when needed."
+            ),
+        }
+    )
     return session
 
 
@@ -2740,14 +3258,26 @@ def _print_slash_help(console: Console) -> None:
     """Print available slash commands."""
     console.print()
     console.print("[anton.cyan]Available commands:[/]")
-    console.print("  [bold]/connect[/]                — Connect to a Minds server and select a mind")
-    console.print("  [bold]/connect-data-source[/]    — Connect a database or API to the Local Vault")
-    console.print("  [bold]/list-data-sources[/]      — List all saved data source connections")
+    console.print(
+        "  [bold]/connect[/]                — Connect to a Minds server and select a mind"
+    )
+    console.print(
+        "  [bold]/connect-data-source[/]    — Connect a database or API to the Local Vault"
+    )
+    console.print(
+        "  [bold]/list-data-sources[/]      — List all saved data source connections"
+    )
     console.print("  [bold]/remove-data-source[/]     — Remove a saved connection")
-    console.print("  [bold]/data-connections[/]       — View and manage stored keys and connections")
-    console.print("  [bold]/setup[/]                  — Configure models or memory settings")
+    console.print(
+        "  [bold]/data-connections[/]       — View and manage stored keys and connections"
+    )
+    console.print(
+        "  [bold]/setup[/]                  — Configure models or memory settings"
+    )
     console.print("  [bold]/memory[/]                 — Show memory status dashboard")
-    console.print("  [bold]/paste[/]                  — Attach clipboard image to your message")
+    console.print(
+        "  [bold]/paste[/]                  — Attach clipboard image to your message"
+    )
     console.print("  [bold]/resume[/]                 — Resume a previous chat session")
     console.print("  [bold]/help[/]                   — Show this help message")
     console.print("  [bold]exit[/]                    — Quit the chat")
@@ -2859,8 +3389,12 @@ class _ClosingSpinner:
         from rich.spinner import Spinner
         from rich.text import Text
 
-        spinner = Spinner("dots", text=Text(" Closing scratchpad processes…", style="anton.muted"))
-        self._live = Live(spinner, console=self._console, refresh_per_second=6, transient=True)
+        spinner = Spinner(
+            "dots", text=Text(" Closing scratchpad processes…", style="anton.muted")
+        )
+        self._live = Live(
+            spinner, console=self._console, refresh_per_second=6, transient=True
+        )
         self._live.start()
 
     def stop(self) -> None:
@@ -2869,12 +3403,16 @@ class _ClosingSpinner:
             self._live = None
 
 
-def run_chat(console: Console, settings: AntonSettings, *, resume: bool = False) -> None:
+def run_chat(
+    console: Console, settings: AntonSettings, *, resume: bool = False
+) -> None:
     """Launch the interactive chat REPL."""
     asyncio.run(_chat_loop(console, settings, resume=resume))
 
 
-async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool = False) -> None:
+async def _chat_loop(
+    console: Console, settings: AntonSettings, *, resume: bool = False
+) -> None:
     from anton.context.self_awareness import SelfAwarenessContext
     from anton.llm.client import LLMClient
     from anton.memory.cortex import Cortex
@@ -2947,7 +3485,8 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
     runtime_context = _build_runtime_context(settings)
 
     coding_api_key = (
-        settings.anthropic_api_key if settings.coding_provider == "anthropic"
+        settings.anthropic_api_key
+        if settings.coding_provider == "anthropic"
         else settings.openai_api_key
     ) or ""
     session = ChatSession(
@@ -2968,15 +3507,22 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
     # Handle --resume flag at startup
     if resume:
         session, resumed_id = await _handle_resume(
-            console, settings, state, self_awareness, cortex,
-            workspace, session, episodic=episodic,
+            console,
+            settings,
+            state,
+            self_awareness,
+            cortex,
+            workspace,
+            session,
+            episodic=episodic,
             history_store=history_store,
         )
         if resumed_id:
             current_session_id = resumed_id
 
-
-    console.print("[anton.muted] Chat with Anton. Type '/help' for commands or 'exit' to quit.[/]")
+    console.print(
+        "[anton.muted] Chat with Anton. Type '/help' for commands or 'exit' to quit.[/]"
+    )
     console.print(f"[anton.cyan_dim] {'━' * 40}[/]")
     console.print()
 
@@ -3004,9 +3550,11 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
         line = status + " " * gap + stats
         return HTML(f"\n<style fg='#555570'>{line}</style>")
 
-    pt_style = PTStyle.from_dict({
-        "bottom-toolbar": "noreverse nounderline bg:default",
-    })
+    pt_style = PTStyle.from_dict(
+        {
+            "bottom-toolbar": "noreverse nounderline bg:default",
+        }
+    )
 
     prompt_session: PromptSession[str] = PromptSession(
         mouse_support=False,
@@ -3023,7 +3571,11 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
                 for i, engram in enumerate(pending, 1):
                     console.print(f"  [bold]{i}.[/] [{engram.kind}] {engram.text}")
                 console.print()
-                confirm = console.input("[bold]Save to memory? (y/n/pick numbers):[/] ").strip().lower()
+                confirm = (
+                    console.input("[bold]Save to memory? (y/n/pick numbers):[/] ")
+                    .strip()
+                    .lower()
+                )
                 if confirm in ("y", "yes"):
                     if cortex is not None:
                         await cortex.encode(pending)
@@ -3033,11 +3585,19 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
                 else:
                     # Parse number selections like "1 3" or "1,3"
                     try:
-                        nums = [int(x.strip()) for x in confirm.replace(",", " ").split() if x.strip().isdigit()]
-                        selected = [pending[n - 1] for n in nums if 1 <= n <= len(pending)]
+                        nums = [
+                            int(x.strip())
+                            for x in confirm.replace(",", " ").split()
+                            if x.strip().isdigit()
+                        ]
+                        selected = [
+                            pending[n - 1] for n in nums if 1 <= n <= len(pending)
+                        ]
                         if selected and cortex is not None:
                             await cortex.encode(selected)
-                            console.print(f"[anton.muted]Saved {len(selected)} entries.[/]")
+                            console.print(
+                                f"[anton.muted]Saved {len(selected)} entries.[/]"
+                            )
                         else:
                             console.print("[anton.muted]Discarded.[/]")
                     except (ValueError, IndexError):
@@ -3092,15 +3652,25 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
                 cmd = parts[0].lower()
                 if cmd == "/connect":
                     session = await _handle_connect(
-                        console, settings, workspace, state,
-                        self_awareness, cortex, session,
+                        console,
+                        settings,
+                        workspace,
+                        state,
+                        self_awareness,
+                        cortex,
+                        session,
                         episodic=episodic,
                     )
                     continue
                 elif cmd == "/setup":
                     session = await _handle_setup(
-                        console, settings, workspace, state,
-                        self_awareness, cortex, session,
+                        console,
+                        settings,
+                        workspace,
+                        state,
+                        self_awareness,
+                        cortex,
+                        session,
                         episodic=episodic,
                         history_store=history_store,
                         session_id=current_session_id,
@@ -3111,7 +3681,9 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
                     continue
                 elif cmd == "/connect-data-source":
                     session = await _handle_connect_datasource(
-                        console, session._scratchpads, session,
+                        console,
+                        session._scratchpads,
+                        session,
                     )
                     continue
                 elif cmd == "/list-data-sources":
@@ -3124,34 +3696,47 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
                             "[anton.warning]Usage: /remove-data-source"
                             " <engine-name>[/]"
                         )
-                    else:
                         _handle_remove_data_source(console, arg)
                     continue
                 elif cmd == "/edit-data-source":
                     arg = parts[1].strip() if len(parts) > 1 else ""
-                    console.print(
-                        f"[anton.muted]/edit-data-source is not yet implemented. "
-                        f"To update '{arg}', use /remove-data-source {arg}"
-                        f" then /connect-data-source.[/]"
-                    )
-                    console.print()
+                    if not arg:
+                        console.print(
+                            "[anton.warning]Usage: /edit-data-source <engine-name>[/]"
+                        )
+                        console.print()
+                    else:
+                        session = await _handle_connect_datasource(
+                            console,
+                            session._scratchpads,
+                            session,
+                            datasource_name=arg,
+                        )
                     continue
                 elif cmd == "/test-data-source":
                     console.print(
-                        "[anton.muted]/test-data-source is not yet"
-                        " implemented.[/]"
+                        "[anton.muted]/test-data-source is not yet" " implemented.[/]"
                     )
                     console.print()
                     continue
                 elif cmd == "/data-connections":
                     session = await _handle_data_connections(
-                        console, settings, workspace, session,
+                        console,
+                        settings,
+                        workspace,
+                        session,
                     )
                     continue
                 elif cmd == "/resume":
                     session, resumed_id = await _handle_resume(
-                        console, settings, state, self_awareness, cortex,
-                        workspace, session, episodic=episodic,
+                        console,
+                        settings,
+                        state,
+                        self_awareness,
+                        cortex,
+                        workspace,
+                        session,
+                        episodic=episodic,
                         history_store=history_store,
                     )
                     if resumed_id:
@@ -3172,7 +3757,9 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
                             f"{_human_size(uploaded.size_bytes)})[/]"
                         )
                         user_text = parts[1] if len(parts) > 1 else ""
-                        message_content = _format_clipboard_image_message(uploaded, user_text)
+                        message_content = _format_clipboard_image_message(
+                            uploaded, user_text
+                        )
                         # Fall through to turn_stream (don't continue)
                     else:
                         console.print("[anton.warning]No image found on clipboard.[/]")
@@ -3241,6 +3828,7 @@ async def _chat_loop(console: Console, settings: AntonSettings, *, resume: bool 
                 )
                 settings.anthropic_api_key = None
                 from anton.cli import _ensure_api_key
+
                 _ensure_api_key(settings)
                 session = _rebuild_session(
                     settings=settings,
