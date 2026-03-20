@@ -524,6 +524,139 @@ Grant required API permissions (read_products, read_orders, etc.) then install t
 
 ---
 
+## NetSuite
+
+```yaml
+engine: netsuite
+display_name: NetSuite
+pip: requests-oauthlib>=1.3.1
+name_from: account_id
+fields:
+  - { name: account_id,     required: true,  secret: false, description: "NetSuite account/realm ID (e.g. 123456_SB1)" }
+  - { name: consumer_key,   required: true,  secret: true,  description: "OAuth consumer key for the NetSuite integration" }
+  - { name: consumer_secret,required: true,  secret: true,  description: "OAuth consumer secret for the NetSuite integration" }
+  - { name: token_id,       required: true,  secret: true,  description: "Token ID generated for the integration role" }
+  - { name: token_secret,   required: true,  secret: true,  description: "Token secret generated for the integration role" }
+  - { name: rest_domain,    required: false, secret: false, description: "REST domain override (defaults to https://<account_id>.suitetalk.api.netsuite.com)" }
+  - { name: record_types,   required: false, secret: false, description: "Comma-separated NetSuite record types to expose (e.g. customer,item,salesOrder)" }
+test_snippet: |
+  import os
+  from requests_oauthlib import OAuth1Session
+  account_id = os.environ['DS_ACCOUNT_ID']
+  rest_domain = os.environ.get('DS_REST_DOMAIN') or f'https://{account_id.lower().replace("_", "-")}.suitetalk.api.netsuite.com'
+  url = f'{rest_domain.rstrip("/")}/services/rest/record/v1/metadata-catalog/'
+  session = OAuth1Session(
+      client_key=os.environ['DS_CONSUMER_KEY'],
+      client_secret=os.environ['DS_CONSUMER_SECRET'],
+      resource_owner_key=os.environ['DS_TOKEN_ID'],
+      resource_owner_secret=os.environ['DS_TOKEN_SECRET'],
+      realm=account_id,
+      signature_method='HMAC-SHA256',
+  )
+  r = session.get(url, headers={'Prefer': 'transient'})
+  assert r.status_code < 400, f'HTTP {r.status_code}: {r.text[:200]}'
+  print("ok")
+```
+
+NetSuite uses OAuth 1.0a Token-Based Authentication (TBA). Create an integration record in
+NetSuite (Setup → Integration → Manage Integrations), then generate token credentials via
+Setup → Users/Roles → Access Tokens. The account ID can be found in Setup → Company → Company Information.
+
+---
+
+## Denodo
+
+```yaml
+engine: denodo
+display_name: Denodo
+pip: psycopg2-binary
+name_from: [host, database]
+fields:
+  - { name: host,     required: true,  secret: false, description: "hostname or IP of the Denodo server" }
+  - { name: port,     required: false, secret: false, description: "port number (default 9996)", default: "9996" }
+  - { name: database, required: true,  secret: false, description: "Denodo virtual database name" }
+  - { name: user,     required: true,  secret: false, description: "Denodo username" }
+  - { name: password, required: true,  secret: true,  description: "Denodo password" }
+test_snippet: |
+  import psycopg2, os
+  conn = psycopg2.connect(
+      host=os.environ['DS_HOST'],
+      port=int(os.environ.get('DS_PORT', '9996')),
+      dbname=os.environ['DS_DATABASE'],
+      user=os.environ['DS_USER'],
+      password=os.environ['DS_PASSWORD'],
+  )
+  conn.close()
+  print("ok")
+```
+
+Denodo exposes a PostgreSQL-compatible wire protocol on port 9996 by default.
+Connect via the Denodo Platform Control Center → Server Configuration → ODBC/JDBC to find the port.
+
+---
+
+## TimescaleDB
+
+```yaml
+engine: timescaledb
+display_name: TimescaleDB
+pip: psycopg2-binary
+name_from: [host, database]
+fields:
+  - { name: host,     required: true,  secret: false, description: "hostname or IP of the TimescaleDB server" }
+  - { name: port,     required: false, secret: false, description: "port number", default: "5432" }
+  - { name: database, required: true,  secret: false, description: "database name" }
+  - { name: user,     required: true,  secret: false, description: "database username" }
+  - { name: password, required: true,  secret: true,  description: "database password" }
+  - { name: schema,   required: false, secret: false, description: "schema name (defaults to public)" }
+test_snippet: |
+  import psycopg2, os
+  conn = psycopg2.connect(
+      host=os.environ['DS_HOST'],
+      port=int(os.environ.get('DS_PORT', '5432')),
+      dbname=os.environ['DS_DATABASE'],
+      user=os.environ['DS_USER'],
+      password=os.environ['DS_PASSWORD'],
+  )
+  cur = conn.cursor()
+  cur.execute("SELECT extname FROM pg_extension WHERE extname = 'timescaledb'")
+  if not cur.fetchone():
+      raise RuntimeError("timescaledb extension not found — is TimescaleDB installed?")
+  conn.close()
+  print("ok")
+```
+
+TimescaleDB is a PostgreSQL extension for time-series data. Managed options include Timescale Cloud
+and self-hosted PostgreSQL with the TimescaleDB extension installed.
+
+---
+
+## Email
+
+```yaml
+engine: email
+display_name: Email
+name_from: email
+fields:
+  - { name: email,       required: true,  secret: false, description: "email address to connect" }
+  - { name: password,    required: true,  secret: true,  description: "email account password or app-specific password" }
+  - { name: imap_server, required: false, secret: false, description: "IMAP server hostname", default: "imap.gmail.com" }
+  - { name: smtp_server, required: false, secret: false, description: "SMTP server hostname", default: "smtp.gmail.com" }
+  - { name: smtp_port,   required: false, secret: false, description: "SMTP port", default: "587" }
+test_snippet: |
+  import imaplib, os
+  imap = imaplib.IMAP4_SSL(os.environ.get('DS_IMAP_SERVER', 'imap.gmail.com'))
+  imap.login(os.environ['DS_EMAIL'], os.environ['DS_PASSWORD'])
+  imap.logout()
+  print("ok")
+```
+
+For Gmail, enable IMAP in Settings → See all settings → Forwarding and POP/IMAP, then use an
+App Password (Google Account → Security → 2-Step Verification → App passwords) instead of your
+account password. For other providers, set imap_server and smtp_server accordingly.
+
+---
+
 ## Adding a new data source
 
 Follow the YAML format above. Add to `~/.anton/datasources.md` (user overrides).

@@ -2585,9 +2585,12 @@ async def _handle_add_custom_datasource(
     """Ask the user how they authenticate, use the LLM to identify fields, save definition."""
 
     console.print()
+    if name:
+        preamble = f"[anton.cyan](anton)[/] '{name}' isn't in my built-in list.\n        "
+    else:
+        preamble = "[anton.cyan](anton)[/] "
     user_answer = Prompt.ask(
-        f"[anton.cyan](anton)[/] '{name}' isn't in my built-in list.\n"
-        f"        How do you authenticate with it? "
+        f"{preamble}How do you authenticate with it? "
         f"Describe what you have or paste credentials directly",
         console=console,
     )
@@ -2604,7 +2607,7 @@ async def _handle_add_custom_datasource(
                 {
                     "role": "user",
                     "content": (
-                        f"The user wants to connect to '{name}' and said: {user_answer}\n\n"
+                        f"The user wants to connect to{(' ' + repr(name)) if name else ' a custom data source'} and said: {user_answer}\n\n"
                         "Return ONLY valid JSON (no markdown fences, no commentary):\n"
                         '{"display_name":"Human-readable name","pip":"pip-package or empty string",'
                         '"fields":[{"name":"snake_case_name","value":"value if given inline else empty",'
@@ -2923,13 +2926,20 @@ async def _handle_connect_datasource(
 
     # ── Normal flow: connect a new (or reconnect an existing) data source ─────
     console.print()
-    engine_names = ", ".join(e.display_name for e in registry.all_engines())
+    all_engines = registry.all_engines()
+
     if prefill:
         answer = prefill
     else:
+        console.print(
+            "[anton.cyan](anton)[/] Which data source would you like to connect?\n"
+        )
+        console.print("        [bold]  0.[/bold] Create a custom datasource")
+        for i, e in enumerate(all_engines, 1):
+            console.print(f"        [bold]{i:>2}.[/bold] {e.display_name}")
+        console.print()
         answer = Prompt.ask(
-            f"[anton.cyan](anton)[/] Which data source would you like to connect?\n"
-            f"        [anton.muted](e.g. {engine_names})[/]\n",
+            "[anton.cyan](anton)[/] Enter a number, or type the name",
             console=console,
         )
 
@@ -2962,59 +2972,109 @@ async def _handle_connect_datasource(
         )
         return session
 
-    engine_def = registry.find_by_name(stripped_answer)
-    if engine_def is None:
-        # Check whether the input is ambiguous before treating it as unknown
-        needle = stripped_answer.lower()
-        candidates = [
-            e
-            for e in registry.all_engines()
-            if needle in e.display_name.lower() or needle in e.engine.lower()
-        ]
-        if len(candidates) > 1:
-            console.print()
-            console.print(
-                f"[anton.warning](anton)[/] '{stripped_answer}' matches multiple engines — "
-                "which one did you mean?"
-            )
-            console.print()
-            for i, e in enumerate(candidates, 1):
-                console.print(f"        {i}. {e.display_name}")
-            console.print()
-            pick = Prompt.ask(
-                "[anton.cyan](anton)[/] Enter a number",
-                console=console,
-            ).strip()
-            try:
-                engine_def = candidates[int(pick) - 1]
-            except (ValueError, IndexError):
-                console.print("[anton.warning]Invalid choice. Aborting.[/]")
-                console.print()
-                return session
+    # ── Number selection ───────────────────────────────────────────────────────
+    engine_def: DatasourceEngine | None = None
+    _go_custom = False
+
+    if stripped_answer.isdigit() or (stripped_answer.lstrip("-").isdigit()):
+        pick_num = int(stripped_answer)
+        if pick_num == 0:
+            _go_custom = True
+        elif 1 <= pick_num <= len(all_engines):
+            engine_def = all_engines[pick_num - 1]
         else:
-            result = await _handle_add_custom_datasource(
-                console, stripped_answer, registry, session
-            )
-            if result is None:
-                return session
-            engine_def, credentials = result
-            conn_num = vault.next_connection_number(engine_def.engine)
-            vault.save(engine_def.engine, str(conn_num), credentials)
-            slug = f"{engine_def.engine}-{conn_num}"
             console.print(
-                f'        Credentials saved to Local Vault as [bold]"{slug}"[/bold].'
+                f"[anton.warning](anton)[/] '{stripped_answer}' is out of range. "
+                f"Please enter 0–{len(all_engines)}.[/]"
             )
             console.print()
-            session._history.append(
-                {
-                    "role": "assistant",
-                    "content": (
-                        f'I\'ve saved a {engine_def.display_name} connection named "{slug}" '
-                        f"to the Local Vault. I can now query this data source when needed."
-                    ),
-                }
-            )
             return session
+
+    # ── Name-based resolution (when not a number) ─────────────────────────────
+    if engine_def is None and not _go_custom:
+        # 1. Exact / case-insensitive / whitespace-normalized match
+        engine_def = registry.find_by_name(stripped_answer)
+
+        if engine_def is None:
+            # 2. Substring match
+            needle = stripped_answer.lower()
+            candidates = [
+                e
+                for e in all_engines
+                if needle in e.display_name.lower() or needle in e.engine.lower()
+            ]
+            if len(candidates) == 1:
+                engine_def = candidates[0]
+            elif len(candidates) > 1:
+                console.print()
+                console.print(
+                    f"[anton.warning](anton)[/] '{stripped_answer}' matches multiple engines — "
+                    "which one did you mean?"
+                )
+                console.print()
+                for i, e in enumerate(candidates, 1):
+                    console.print(f"        {i}. {e.display_name}")
+                console.print()
+                pick = Prompt.ask(
+                    "[anton.cyan](anton)[/] Enter a number",
+                    console=console,
+                ).strip()
+                try:
+                    engine_def = candidates[int(pick) - 1]
+                except (ValueError, IndexError):
+                    console.print("[anton.warning]Invalid choice. Aborting.[/]")
+                    console.print()
+                    return session
+
+        if engine_def is None:
+            # 3. Fuzzy / close match
+            fuzzy_matches = registry.fuzzy_find(stripped_answer)
+            for suggestion in fuzzy_matches:
+                console.print()
+                console.print(
+                    f'[anton.cyan](anton)[/] Did you mean [bold]"{suggestion.display_name}"[/bold]?'
+                )
+                confirm = (
+                    Prompt.ask(
+                        "[anton.cyan](anton)[/] [y/n]",
+                        console=console,
+                        default="n",
+                    )
+                    .strip()
+                    .lower()
+                )
+                if confirm == "y":
+                    engine_def = suggestion
+                    break
+
+        if engine_def is None:
+            _go_custom = True
+
+    # ── Custom datasource flow ────────────────────────────────────────────────
+    if _go_custom:
+        result = await _handle_add_custom_datasource(
+            console, stripped_answer if not stripped_answer.isdigit() else "", registry, session
+        )
+        if result is None:
+            return session
+        engine_def, credentials = result
+        conn_num = vault.next_connection_number(engine_def.engine)
+        vault.save(engine_def.engine, str(conn_num), credentials)
+        slug = f"{engine_def.engine}-{conn_num}"
+        console.print(
+            f'        Credentials saved to Local Vault as [bold]"{slug}"[/bold].'
+        )
+        console.print()
+        session._history.append(
+            {
+                "role": "assistant",
+                "content": (
+                    f'I\'ve saved a {engine_def.display_name} connection named "{slug}" '
+                    f"to the Local Vault. I can now query this data source when needed."
+                ),
+            }
+        )
+        return session
 
     # ── Step 2a: auth method choice (if engine requires it) ───────
     active_fields = engine_def.fields
