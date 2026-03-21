@@ -1492,3 +1492,82 @@ class TestTemporaryFlatExecution:
         assert "DS_HOST" not in os.environ
         assert os.environ.get("DS_POSTGRESQL_PROD_DB__HOST") == "pg.example.com"
         assert os.environ.get("DS_HUBSPOT_MAIN__ACCESS_TOKEN") == "pat-abc"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stale registration state regression tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TestStaleDsRegistrationState:
+    """Regression tests: _DS_SECRET_VARS/_DS_KNOWN_VARS must mirror vault contents."""
+
+    def test_remove_clears_stale_secret_vars(self, vault_dir, registry):
+        """After removing a connection, its secret var names leave _DS_SECRET_VARS."""
+        vault = DataVault(vault_dir=vault_dir)
+        vault.save("postgresql", "prod_db", {
+            "host": "pg.example.com", "port": "5432",
+            "database": "prod_db", "user": "alice", "password": "s3cr3t",
+        })
+
+        with patch("anton.datasource_registry.DatasourceRegistry", return_value=registry):
+            _restore_namespaced_env(vault)
+
+        assert "DS_POSTGRESQL_PROD_DB__PASSWORD" in _DS_SECRET_VARS
+        assert "DS_POSTGRESQL_PROD_DB__PASSWORD" in _DS_KNOWN_VARS
+
+        vault.delete("postgresql", "prod_db")
+
+        with patch("anton.datasource_registry.DatasourceRegistry", return_value=registry):
+            _restore_namespaced_env(vault)
+
+        assert "DS_POSTGRESQL_PROD_DB__PASSWORD" not in _DS_SECRET_VARS
+        assert "DS_POSTGRESQL_PROD_DB__PASSWORD" not in _DS_KNOWN_VARS
+
+    def test_edit_connection_refreshes_secret_vars(self, vault_dir, registry):
+        """Overwriting a connection via vault.save rebuilds registration without duplication."""
+        vault = DataVault(vault_dir=vault_dir)
+        vault.save("postgresql", "prod_db", {
+            "host": "pg.example.com", "port": "5432",
+            "database": "prod_db", "user": "alice", "password": "old-pass",
+        })
+
+        with patch("anton.datasource_registry.DatasourceRegistry", return_value=registry):
+            _restore_namespaced_env(vault)
+
+        secret_key = "DS_POSTGRESQL_PROD_DB__PASSWORD"
+        assert secret_key in _DS_SECRET_VARS
+        count_before = len(_DS_SECRET_VARS)
+
+        # Simulate edit: overwrite with new credentials
+        vault.save("postgresql", "prod_db", {
+            "host": "pg.example.com", "port": "5432",
+            "database": "prod_db", "user": "alice", "password": "new-pass",
+        })
+
+        with patch("anton.datasource_registry.DatasourceRegistry", return_value=registry):
+            _restore_namespaced_env(vault)
+
+        assert secret_key in _DS_SECRET_VARS
+        assert len(_DS_SECRET_VARS) == count_before
+        assert os.environ.get(secret_key) == "new-pass"
+
+    def test_reconnect_no_duplicate_secret_vars(self, vault_dir, registry):
+        """Calling _restore_namespaced_env multiple times does not grow _DS_SECRET_VARS."""
+        vault = DataVault(vault_dir=vault_dir)
+        vault.save("postgresql", "prod_db", {
+            "host": "pg.example.com", "port": "5432",
+            "database": "prod_db", "user": "alice", "password": "s3cr3t",
+        })
+
+        with patch("anton.datasource_registry.DatasourceRegistry", return_value=registry):
+            _restore_namespaced_env(vault)
+
+        count_after_first = len(_DS_SECRET_VARS)
+        known_after_first = len(_DS_KNOWN_VARS)
+
+        with patch("anton.datasource_registry.DatasourceRegistry", return_value=registry):
+            _restore_namespaced_env(vault)
+
+        assert len(_DS_SECRET_VARS) == count_after_first
+        assert len(_DS_KNOWN_VARS) == known_after_first
