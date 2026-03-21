@@ -1044,6 +1044,12 @@ _DS_SECRET_VARS: set[str] = set()
 _DS_KNOWN_VARS: set[str] = set()
 
 
+def reset_registered_ds_vars() -> None:
+    """Clear the DS_* var registries so they can be rebuilt from current vault state."""
+    _DS_SECRET_VARS.clear()
+    _DS_KNOWN_VARS.clear()
+
+
 def _register_secret_vars(
     engine_def: "DatasourceEngine", *, engine: str = "", name: str = ""
 ) -> None:
@@ -1127,6 +1133,7 @@ def _restore_namespaced_env(vault: DataVault) -> None:
     """Clear all DS_* vars, then reinject every saved connection as namespaced."""
     from anton.datasource_registry import DatasourceRegistry
 
+    reset_registered_ds_vars()
     vault.clear_ds_env()
     dreg = DatasourceRegistry()
     for conn in vault.list_connections():
@@ -3397,6 +3404,7 @@ def _handle_remove_data_source(console: Console, slug: str) -> None:
         f"Remove '{slug}' from Local Vault?", default=False, console=console
     ):
         vault.delete(engine, name)
+        _restore_namespaced_env(vault)
         console.print(f"[anton.success]Removed {slug}.[/]")
     else:
         console.print("[anton.muted]Cancelled.[/]")
