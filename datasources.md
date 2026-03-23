@@ -18,7 +18,7 @@ pip: psycopg2-binary
 name_from: database
 fields:
   - { name: host,     required: true,  secret: false, description: "hostname or IP of your database server" }
-  - { name: port,     required: false, secret: false, description: "port number", default: "5432" }
+  - { name: port,     required: true, secret: false, description: "port number", default: "5432" }
   - { name: database, required: true,  secret: false, description: "name of the database to connect" }
   - { name: user,     required: true,  secret: false, description: "database username" }
   - { name: password, required: true,  secret: true,  description: "database password" }
@@ -49,7 +49,7 @@ pip: mysql-connector-python
 name_from: database
 fields:
   - { name: host,     required: true,  secret: false, description: "hostname or IP of your MySQL server" }
-  - { name: port,     required: false, secret: false, description: "port number", default: "3306" }
+  - { name: port,     required: true, secret: false, description: "port number", default: "3306" }
   - { name: database, required: true,  secret: false, description: "database name to connect" }
   - { name: user,     required: true,  secret: false, description: "MySQL username" }
   - { name: password, required: true,  secret: true,  description: "MySQL password" }
@@ -81,7 +81,7 @@ pip: mysql-connector-python
 name_from: database
 fields:
   - { name: host,     required: true,  secret: false, description: "hostname or IP of your MariaDB server" }
-  - { name: port,     required: false, secret: false, description: "port number", default: "3306" }
+  - { name: port,     required: true, secret: false, description: "port number", default: "3306" }
   - { name: database, required: true,  secret: false, description: "database name to connect" }
   - { name: user,     required: true,  secret: false, description: "MariaDB username" }
   - { name: password, required: true,  secret: true,  description: "MariaDB password" }
@@ -115,7 +115,7 @@ pip: pymssql
 name_from: database
 fields:
   - { name: host,     required: true,  secret: false, description: "hostname or IP of the SQL Server (for Azure use server field instead)" }
-  - { name: port,     required: false, secret: false, description: "port number", default: "1433" }
+  - { name: port,     required: true, secret: false, description: "port number", default: "1433" }
   - { name: database, required: true,  secret: false, description: "database name" }
   - { name: user,     required: true,  secret: false, description: "SQL Server username" }
   - { name: password, required: true,  secret: true,  description: "SQL Server password" }
@@ -240,8 +240,8 @@ name_from: [host, service_name]
 fields:
   - { name: user,         required: true,  secret: false, description: "Oracle database username" }
   - { name: password,     required: true,  secret: true,  description: "Oracle database password" }
-  - { name: host,         required: false, secret: false, description: "hostname or IP address of the Oracle server" }
-  - { name: port,         required: false, secret: false, description: "port number (default 1521)", default: "1521" }
+  - { name: host,         required: true, secret: false, description: "hostname or IP address of the Oracle server" }
+  - { name: port,         required: true, secret: false, description: "port number (default 1521)", default: "1521" }
   - { name: service_name, required: false, secret: false, description: "Oracle service name (preferred over SID)" }
   - { name: sid,          required: false, secret: false, description: "Oracle SID — use service_name if possible" }
   - { name: dsn,          required: false, secret: false, description: "full DSN string — overrides host/port/service_name" }
@@ -307,7 +307,7 @@ pip: psycopg2-binary
 name_from: [host, database]
 fields:
   - { name: host,     required: true,  secret: false, description: "Redshift cluster endpoint (e.g. mycluster.abc123.us-east-1.redshift.amazonaws.com)" }
-  - { name: port,     required: false, secret: false, description: "port number", default: "5439" }
+  - { name: port,     required: true, secret: false, description: "port number", default: "5439" }
   - { name: database, required: true,  secret: false, description: "database name" }
   - { name: user,     required: true,  secret: false, description: "Redshift username" }
   - { name: password, required: true,  secret: true,  description: "Redshift password" }
@@ -403,7 +403,7 @@ pip: pgvector psycopg2-binary
 name_from: database
 fields:
   - { name: host,     required: true,  secret: false, description: "hostname or IP of your PostgreSQL server with pgvector extension" }
-  - { name: port,     required: false, secret: false, description: "port number", default: "5432" }
+  - { name: port,     required: true, secret: false, description: "port number", default: "5432" }
   - { name: database, required: true,  secret: false, description: "database name" }
   - { name: user,     required: true,  secret: false, description: "database username" }
   - { name: password, required: true,  secret: true,  description: "database password" }
@@ -439,8 +439,8 @@ display_name: ChromaDB
 pip: chromadb
 name_from: host
 fields:
-  - { name: host,              required: false, secret: false, description: "ChromaDB server host for HTTP client mode (omit for local in-process mode)" }
-  - { name: port,              required: false, secret: false, description: "ChromaDB server port", default: "8000" }
+  - { name: host,              required: true, secret: false, description: "ChromaDB server host for HTTP client mode (omit for local in-process mode)" }
+  - { name: port,              required: true, secret: false, description: "ChromaDB server port", default: "8000" }
   - { name: persist_directory, required: false, secret: false, description: "local directory for persistent storage (local mode only)" }
 test_snippet: |
   import chromadb, os
@@ -596,7 +596,7 @@ pip: psycopg2-binary
 name_from: [host, database]
 fields:
   - { name: host,     required: true,  secret: false, description: "hostname or IP of the TimescaleDB server" }
-  - { name: port,     required: false, secret: false, description: "port number", default: "5432" }
+  - { name: port,     required: true, secret: false, description: "port number", default: "5432" }
   - { name: database, required: true,  secret: false, description: "database name" }
   - { name: user,     required: true,  secret: false, description: "database username" }
   - { name: password, required: true,  secret: true,  description: "database password" }
