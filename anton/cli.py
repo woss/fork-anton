@@ -252,7 +252,7 @@ def _onboard(settings) -> None:
     _INTRO_LINES = [
         "Hi! I'm Anton, an autonomous AI coworker built by MindsDB.",
         "",
-        "For the best experience, I recommend MindsDB Cloud (https://mdb.ai)",
+        "For the best experience, I recommend MindsDB Cloud https://mdb.ai",
         "as your LLM provider. It is optimized for me with:",
         "",
         "  \u2713 Smart model routing",
@@ -350,7 +350,7 @@ def _animate_onboard(console, version: str, intro_lines: list[str], *, settings,
                 console.print()
         elif line.startswith("  \u2713"):
             first_text = False
-            console.print(f"[anton.success]{line}[/]")
+            console.print(f"  [anton.success]\u2713[/] {line[4:]}")
         else:
             first_text = False
             console.print(line)
@@ -363,19 +363,29 @@ def _animate_onboard(console, version: str, intro_lines: list[str], *, settings,
     console.print("  [bold]3[/]  [anton.cyan]Bring your own key[/] [anton.muted]Anthropic / OpenAI[/]")
     console.print()
 
-    choice = Prompt.ask(
-        "Choose LLM Provider",
-        choices=["1", "2", "3"],
-        default="1",
-        console=console,
-    )
+    while True:
+        choice = Prompt.ask(
+            "Choose LLM Provider",
+            choices=["1", "2", "3"],
+            default="1",
+            console=console,
+        )
 
-    if choice == "1":
-        _setup_minds(settings, ws)
-    elif choice == "2":
-        _setup_minds(settings, ws, enterprise=True)
-    else:
-        _setup_other_provider(settings, ws)
+        try:
+            if choice == "1":
+                _setup_minds(settings, ws)
+            elif choice == "2":
+                _setup_minds(settings, ws, enterprise=True)
+            else:
+                _setup_other_provider(settings, ws)
+            break  # success
+        except _SetupRetry:
+            console.print()
+            console.print("  [bold]1[/]  [link=https://mdb.ai][anton.cyan]MindsDB Cloud[/][/link] [anton.success](recommended)[/]")
+            console.print("  [bold]2[/]  [anton.cyan]MindsDB Enterprise Server[/]")
+            console.print("  [bold]3[/]  [anton.cyan]Bring your own key[/] [anton.muted]Anthropic / OpenAI[/]")
+            console.print()
+            continue
 
     # Reload env vars so the scratchpad subprocess inherits them
     ws.apply_env_to_process()
@@ -394,6 +404,11 @@ def _animate_onboard(console, version: str, intro_lines: list[str], *, settings,
     console.print()
 
 
+class _SetupRetry(Exception):
+    """Raised by setup functions to go back to provider selection."""
+    pass
+
+
 def _setup_minds(settings, ws, *, enterprise: bool = False) -> None:
     """Set up Minds as the LLM provider (cloud or enterprise)."""
     from rich.prompt import Confirm, Prompt
@@ -402,27 +417,22 @@ def _setup_minds(settings, ws, *, enterprise: bool = False) -> None:
 
     console.print()
 
-    if enterprise:
-        # Enterprise: ask for server URL first
-        minds_url = Prompt.ask(
-            "  [anton.cyan]Server URL[/]",
-            console=console,
-        ).strip()
-        if not minds_url:
-            console.print("  [anton.error]No URL provided.[/]")
-            raise typer.Exit(1)
-        if not minds_url.startswith("http://") and not minds_url.startswith("https://"):
-            minds_url = "https://" + minds_url
-        minds_url = minds_url.rstrip("/")
-        console.print()
-    else:
-        minds_url = "https://mdb.ai"
+    if not enterprise:
         console.print(
             "  [anton.muted]Don't have a key yet? Create one in seconds at[/]"
             " [link=https://mdb.ai][bold anton.cyan]https://mdb.ai[/][/link]"
         )
         webbrowser.open("https://mdb.ai")
         console.print()
+
+    minds_url = Prompt.ask(
+        "  [anton.cyan]Server URL[/]",
+        default="https://mdb.ai",
+        console=console,
+    ).strip()
+    if not minds_url.startswith("http://") and not minds_url.startswith("https://"):
+        minds_url = "https://" + minds_url
+    minds_url = minds_url.rstrip("/")
 
     api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
     if not api_key.strip():
@@ -461,8 +471,7 @@ def _setup_minds(settings, ws, *, enterprise: bool = False) -> None:
             console=console,
         )
         if not skip_ssl:
-            console.print("  [anton.error]Setup cancelled.[/]")
-            raise typer.Exit(1)
+            llm_ok = False
 
     if llm_ok:
         console.print("  [anton.success]Connected[/]")
@@ -484,7 +493,11 @@ def _setup_minds(settings, ws, *, enterprise: bool = False) -> None:
             ws.set_secret("ANTON_MINDS_SSL_VERIFY", "false")
     else:
         console.print("  [anton.error]Could not connect. Check your API key and URL.[/]")
-        raise typer.Exit(1)
+        retry = Confirm.ask("  Try again?", default=True, console=console)
+        if retry:
+            _setup_minds(settings, ws, enterprise=enterprise)
+        else:
+            raise _SetupRetry()
 
 
 def _setup_other_provider(settings, ws) -> None:
@@ -525,7 +538,7 @@ def _validate_with_spinner(console, label: str, fn) -> None:
 
 def _setup_anthropic(settings, ws) -> None:
     """Set up Anthropic with a single model for both reasoning and coding."""
-    from rich.prompt import Prompt
+    from rich.prompt import Confirm, Prompt
 
     console.print()
     api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
@@ -545,7 +558,12 @@ def _setup_anthropic(settings, ws) -> None:
         _validate_with_spinner(console, model, _test)
     except Exception as exc:
         console.print(f"  [anton.error]Failed:[/] {exc}")
-        raise typer.Exit(1)
+        retry = Confirm.ask("  Try again?", default=True, console=console)
+        if retry:
+            _setup_anthropic(settings, ws)
+            return
+        else:
+            raise _SetupRetry()
 
     settings.anthropic_api_key = api_key
     settings.planning_provider = "anthropic"
@@ -561,7 +579,7 @@ def _setup_anthropic(settings, ws) -> None:
 
 def _setup_openai(settings, ws) -> None:
     """Set up OpenAI with a single model for both reasoning and coding."""
-    from rich.prompt import Prompt
+    from rich.prompt import Confirm, Prompt
 
     console.print()
     api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
@@ -581,7 +599,12 @@ def _setup_openai(settings, ws) -> None:
         _validate_with_spinner(console, model, _test)
     except Exception as exc:
         console.print(f"  [anton.error]Failed:[/] {exc}")
-        raise typer.Exit(1)
+        retry = Confirm.ask("  Try again?", default=True, console=console)
+        if retry:
+            _setup_openai(settings, ws)
+            return
+        else:
+            raise _SetupRetry()
 
     settings.openai_api_key = api_key
     settings.planning_provider = "openai"
