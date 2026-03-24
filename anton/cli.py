@@ -250,7 +250,7 @@ def _onboard(settings) -> None:
     g = "anton.glow"
 
     _INTRO_LINES = [
-        "Hi! I'm Anton, an autonomous AI coworker.",
+        "Hi Boss! I'm Anton, your AI coworker.",
         "",
         "For the best experience, I recommend Minds-Cloud as your LLM Provider:",
         "",
@@ -480,16 +480,17 @@ def _setup_minds(settings, ws, *, default_url: str | None = "https://mdb.ai") ->
             minds_url = "https://" + minds_url
         minds_url = minds_url.rstrip("/")
 
-    console.print("  [anton.muted]If you don't have an API key yet, we'll help you create one — it takes a few seconds.[/]")
-    console.print()
-    has_key = Confirm.ask(
-        "  Do you have an mdb.ai API key?" if is_cloud else "  Do you have an API key?",
-        default=True,
-        console=console,
-    )
-    if not has_key:
-        webbrowser.open(f"{minds_url}/apiKeys")
+    if is_cloud:
+        console.print("  [anton.muted]If you don't have an API key yet, we'll help you create one — it takes a few seconds.[/]")
         console.print()
+        has_key = Confirm.ask(
+            "  Do you have an mdb.ai API key?",
+            default=True,
+            console=console,
+        )
+        if not has_key:
+            webbrowser.open(f"{minds_url}/apiKeys")
+            console.print()
 
     while True:
         api_key = _setup_prompt("API key")

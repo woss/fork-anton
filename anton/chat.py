@@ -1247,18 +1247,25 @@ async def _handle_setup_models(
     # Use the same onboarding flow from cli.py
     from anton.cli import _setup_minds, _setup_other_provider, _SetupRetry, _setup_prompt
 
-    console.print("  [bold]1[/]  [link=https://mdb.ai][anton.cyan]Minds-Cloud[/][/link] [anton.success](recommended)[/]")
-    console.print("  [bold]2[/]  [anton.cyan]Minds-Enterprise Server[/]")
-    console.print("  [bold]3[/]  [anton.cyan]Bring your own key[/] [anton.muted]Anthropic / OpenAI[/]")
-    console.print()
+    def _print_choices():
+        console.print("  [bold]1[/]  [link=https://mdb.ai][anton.cyan]Minds-Cloud[/][/link] [anton.success](recommended)[/]")
+        console.print("  [bold]2[/]  [anton.cyan]Minds-Enterprise Server[/]")
+        console.print("  [bold]3[/]  [anton.cyan]Bring your own key[/] [anton.muted]Anthropic / OpenAI[/]")
+        console.print("  [bold]q[/]  [anton.muted]Back[/]")
+        console.print()
+
+    _print_choices()
 
     while True:
         choice = Prompt.ask(
             "Choose LLM Provider",
-            choices=["1", "2", "3"],
-            default="1",
+            choices=["1", "2", "3", "q"],
+            default="q",
             console=console,
         )
+
+        if choice == "q":
+            return session
 
         try:
             if choice == "1":
@@ -1270,10 +1277,7 @@ async def _handle_setup_models(
             break
         except _SetupRetry:
             console.print()
-            console.print("  [bold]1[/]  [link=https://mdb.ai][anton.cyan]Minds-Cloud[/][/link] [anton.success](recommended)[/]")
-            console.print("  [bold]2[/]  [anton.cyan]Minds-Enterprise Server[/]")
-            console.print("  [bold]3[/]  [anton.cyan]Bring your own key[/] [anton.muted]Anthropic / OpenAI[/]")
-            console.print()
+            _print_choices()
             continue
 
     global_ws.apply_env_to_process()
