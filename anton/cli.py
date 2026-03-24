@@ -439,10 +439,11 @@ def _setup_minds(settings, ws, *, enterprise: bool = False) -> None:
         webbrowser.open(f"{minds_url}/apiKeys")
         console.print()
 
-    api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
-    if not api_key.strip():
-        console.print("  [anton.error]No API key provided.[/]")
-        raise typer.Exit(1)
+    while True:
+        api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
+        if api_key.strip():
+            break
+        console.print("  [anton.warning]Please enter your API key.[/]")
     api_key = api_key.strip()
 
     # Store Minds credentials
@@ -546,10 +547,11 @@ def _setup_anthropic(settings, ws) -> None:
     from rich.prompt import Confirm, Prompt
 
     console.print()
-    api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
-    if not api_key.strip():
-        console.print("  [anton.error]No API key provided.[/]")
-        raise typer.Exit(1)
+    while True:
+        api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
+        if api_key.strip():
+            break
+        console.print("  [anton.warning]Please enter your API key.[/]")
     api_key = api_key.strip()
 
     model = Prompt.ask("  [anton.cyan]Model[/]", default="claude-sonnet-4-6", console=console).strip()
@@ -587,10 +589,11 @@ def _setup_openai(settings, ws) -> None:
     from rich.prompt import Confirm, Prompt
 
     console.print()
-    api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
-    if not api_key.strip():
-        console.print("  [anton.error]No API key provided.[/]")
-        raise typer.Exit(1)
+    while True:
+        api_key = Prompt.ask("  [anton.cyan]API key[/]", console=console)
+        if api_key.strip():
+            break
+        console.print("  [anton.warning]Please enter your API key.[/]")
     api_key = api_key.strip()
 
     model = Prompt.ask("  [anton.cyan]Model[/]", default="gpt-4o", console=console).strip()
