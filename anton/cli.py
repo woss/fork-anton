@@ -272,10 +272,6 @@ def _onboard(settings) -> None:
         for line in _INTRO_LINES:
             console.print(line)
 
-    console.print()
-    console.print(f"[{g}] {'━' * 40}[/]")
-    console.print()
-
 
 def _animate_onboard(console, version: str, intro_lines: list[str]) -> None:
     """Animate the robot talking while typing out the intro text below."""
@@ -360,6 +356,9 @@ def _animate_onboard(console, version: str, intro_lines: list[str]) -> None:
             first_text = False
             console.print(line)
 
+    console.print()
+    console.print(f"[anton.glow] {'━' * 40}[/]")
+    console.print()
     console.print("  [bold]1[/]  [link=https://mdb.ai][anton.cyan]MindsDB Cloud[/][/link] [anton.success](recommended)[/]")
     console.print("  [bold]2[/]  [anton.cyan]Bring your own key[/] [anton.muted]Anthropic / OpenAI[/]")
     console.print()
