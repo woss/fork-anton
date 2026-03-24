@@ -402,11 +402,8 @@ def _animate_onboard(console, version: str, intro_lines: list[str], *, settings,
         else:
             provider_label = "Minds-Enterprise Server"
         model_label = "smart_router"
-    console.print(
-        f"  [anton.muted]Provider[/]  [anton.cyan]{provider_label}[/]"
-        f"   [anton.muted]Model[/]  [anton.cyan]{model_label}[/]"
-    )
-    console.print(f"  [anton.success]Ready.[/]")
+    console.print(f"  [anton.muted]Provider:[/] [anton.cyan]{provider_label}[/]")
+    console.print(f"  [anton.muted]Model:[/]    [anton.cyan]{model_label}[/]")
     console.print()
 
 
@@ -420,7 +417,10 @@ def _setup_prompt(label: str, default: str | None = None) -> str:
 
     Returns the user's input string.
     Raises _SetupRetry if the user presses ESC.
+    Works both from sync context (onboarding) and async context (/setup).
     """
+    import asyncio
+
     from prompt_toolkit import PromptSession
     from prompt_toolkit.formatted_text import HTML
     from prompt_toolkit.key_binding import KeyBindings
@@ -441,7 +441,7 @@ def _setup_prompt(label: str, default: str | None = None) -> str:
     })
 
     def _toolbar():
-        return HTML("<style fg='#ff69b4'>⏵⏵ Esc to go back</style>")
+        return HTML("<style fg='#ff69b4'>\u23f5\u23f5 Esc to go back</style>")
 
     suffix = f" ({default}): " if default else ": "
     session: PromptSession[str] = PromptSession(
@@ -451,7 +451,22 @@ def _setup_prompt(label: str, default: str | None = None) -> str:
         key_bindings=bindings,
     )
 
-    result = session.prompt(f"  {label}{suffix}")
+    # Use async prompt if inside a running event loop, sync otherwise
+    try:
+        asyncio.get_running_loop()
+        in_async = True
+    except RuntimeError:
+        in_async = False
+
+    if in_async:
+        # We're inside an async context (e.g. /setup from chat loop)
+        # Run prompt_toolkit in a thread to avoid nested event loop conflict
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(session.prompt, f"  {label}{suffix}")
+            result = future.result()
+    else:
+        result = session.prompt(f"  {label}{suffix}")
 
     if _esc_pressed:
         console.print("  [anton.muted]Going back...[/]")
