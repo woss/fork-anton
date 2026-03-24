@@ -1589,24 +1589,8 @@ async def _handle_setup_models(
             console=console,
         )
 
-<<<<<<< HEAD
-    # --- API key ---
-    key_attr = "anthropic_api_key" if provider == "anthropic" else "openai_api_key"
-    current_key = getattr(settings, key_attr) or ""
-    masked = (
-        current_key[:4] + "..." + current_key[-4:] if len(current_key) > 8 else "***"
-    )
-    console.print()
-    api_key = Prompt.ask(
-        f"API key for {provider.title()} [dim](Enter to keep {masked})[/]",
-        default="",
-        console=console,
-    )
-    api_key = api_key.strip()
-=======
         if choice == "q":
             return session
->>>>>>> origin/onboarding-launch
 
         try:
             if choice == "1":
@@ -1621,55 +1605,7 @@ async def _handle_setup_models(
             _print_choices()
             continue
 
-<<<<<<< HEAD
-    console.print()
-    planning_model = Prompt.ask(
-        "Planning model",
-        default=(
-            settings.planning_model
-            if provider == settings.planning_provider
-            else default_planning
-        ),
-        console=console,
-    )
-    coding_model = Prompt.ask(
-        "Coding model",
-        default=(
-            settings.coding_model
-            if provider == settings.coding_provider
-            else default_coding
-        ),
-        console=console,
-    )
-
-    # --- Persist to global ~/.anton/.env ---
-    settings.planning_provider = provider
-    settings.coding_provider = provider
-    settings.planning_model = planning_model
-    settings.coding_model = coding_model
-
-    global_ws.set_secret("ANTON_PLANNING_PROVIDER", provider)
-    global_ws.set_secret("ANTON_CODING_PROVIDER", provider)
-    global_ws.set_secret("ANTON_PLANNING_MODEL", planning_model)
-    global_ws.set_secret("ANTON_CODING_MODEL", coding_model)
-
-    if api_key:
-        setattr(settings, key_attr, api_key)
-        key_name = f"ANTON_{provider.upper()}_API_KEY"
-        global_ws.set_secret(key_name, api_key)
-
-    # Validate that we actually have an API key for the chosen provider
-    final_key = getattr(settings, key_attr)
-    if not final_key:
-        console.print()
-        console.print(
-            f"[anton.error]No API key set for {provider}. Configuration not applied.[/]"
-        )
-        console.print()
-        return session
-=======
     global_ws.apply_env_to_process()
->>>>>>> origin/onboarding-launch
 
     console.print()
     console.print("[anton.success]Configuration updated.[/]")
@@ -3916,14 +3852,8 @@ async def _chat_loop(
         if resumed_id:
             current_session_id = resumed_id
 
-<<<<<<< HEAD
-    console.print(
-        "[anton.muted] Chat with Anton. Type '/help' for commands or 'exit' to quit.[/]"
-    )
-=======
 
     console.print("[anton.muted] Chat with me, type '/help' for commands or 'exit' to quit.[/]")
->>>>>>> origin/onboarding-launch
     console.print(f"[anton.cyan_dim] {'━' * 40}[/]")
     console.print()
 
