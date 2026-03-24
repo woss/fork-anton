@@ -853,13 +853,13 @@ def connect_data_source(
     session = ChatSession(llm_client)
 
     async def _run() -> None:
-        updated = await _handle_connect_datasource(
+        await _handle_connect_datasource(
             console,
             scratchpads,
             session,
             datasource_name=slug or None,
         )
-        await updated._scratchpads.close_all()
+        await scratchpads.close_all()
 
     asyncio.run(_run())
 
@@ -902,13 +902,13 @@ def edit_data_source(
     session = ChatSession(llm_client)
 
     async def _run() -> None:
-        updated = await _handle_connect_datasource(
+        await _handle_connect_datasource(
             console,
             scratchpads,
             session,
             datasource_name=name,
         )
-        await updated._scratchpads.close_all()
+        await scratchpads.close_all()
 
     asyncio.run(_run())
 

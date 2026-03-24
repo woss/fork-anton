@@ -2881,14 +2881,6 @@ async def _handle_connect_datasource(
         console.print("[anton.muted]        Press Enter to keep the current value.[/]")
         console.print()
 
-        new_name = Prompt.ask(
-            f"[anton.cyan](anton)[/] name [anton.muted][{edit_name}][/]",
-            console=console,
-            default=edit_name,
-        )
-        new_name = new_name.strip() or edit_name
-        new_slug = f"{edit_engine}-{new_name}"
-
         # Detect which fields to present (handle auth_method=choice)
         active_fields = engine_def.fields
         if engine_def.auth_method == "choice" and engine_def.auth_methods:
@@ -2999,16 +2991,12 @@ async def _handle_connect_datasource(
                 console.print("[anton.success]        ✓ Connected successfully![/]")
                 break
 
-        vault.save(edit_engine, new_name, credentials)
-        if new_name != edit_name:
-            vault.delete(edit_engine, edit_name)
+        vault.save(edit_engine, edit_name, credentials)
         _restore_namespaced_env(vault)
-        _register_secret_vars(engine_def, engine=edit_engine, name=new_name)
-        if new_name != edit_name and session._active_datasource == datasource_name:
-            session._active_datasource = new_slug
+        _register_secret_vars(engine_def, engine=edit_engine, name=edit_name)
         console.print()
         console.print(
-            f'        Credentials updated for [bold]"{new_slug}"[/bold].'
+            f'        Credentials updated for [bold]"{datasource_name}"[/bold].'
         )
         console.print()
         console.print(
@@ -3020,7 +3008,7 @@ async def _handle_connect_datasource(
                 "role": "assistant",
                 "content": (
                     f"I've updated the credentials for the {engine_def.display_name} connection "
-                    f'"{new_slug}" in the Local Vault.'
+                    f'"{datasource_name}" in the Local Vault.'
                 ),
             }
         )
