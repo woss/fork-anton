@@ -3233,7 +3233,7 @@ async def _handle_connect_datasource(
         console.print(
             "[anton.cyan](anton)[/] No problem. Which parameters do you have? "
             "I'll save a partial connection now, and you can fill in the rest later "
-            "with [bold]/edit-data-source[/]."
+            "with [bold]/edit[/]."
         )
         console.print()
         console.print("       Provide what you have (press enter to skip any field):")
@@ -3282,7 +3282,7 @@ async def _handle_connect_datasource(
         console.print(
             f"[anton.muted]Partial connection saved to Local Vault as "
             f'[bold]"{slug}"[/bold]. '
-            f"Run [bold]/edit-data-source {slug}[/bold] to complete it when you're ready.[/]"
+            f"Run [bold]/edit {slug}[/bold] to complete it when you're ready.[/]"
         )
         console.print()
         return session
@@ -3435,7 +3435,7 @@ def _handle_list_data_sources(console: Console) -> None:
     console.print()
     if not conns:
         console.print("[anton.muted]No data sources connected yet.[/]")
-        console.print("[anton.muted]Use /connect-data-source to add one.[/]")
+        console.print("[anton.muted]Use /connect to add one.[/]")
         console.print()
         return
 
@@ -3501,7 +3501,7 @@ async def _handle_test_datasource(
     """Test an existing Local Vault connection by running its test_snippet."""
     if not slug:
         console.print(
-            "[anton.warning]Usage: /test-data-source <engine-name>[/]"
+            "[anton.warning]Usage: /test <engine-name>[/]"
         )
         console.print()
         return
@@ -3588,18 +3588,18 @@ def _print_slash_help(console: Console) -> None:
     """Print available slash commands."""
     console.print()
     console.print("[anton.cyan]Available commands:[/]")
+#    console.print(
+#        "  [bold]/connect[/]                — Connect to a Minds server and select a mind"
+#    )
     console.print(
-        "  [bold]/connect[/]                — Connect to a Minds server and select a mind"
+        "  [bold]/connect[/]    — Connect a database or API to the Local Vault"
     )
     console.print(
-        "  [bold]/connect-data-source[/]    — Connect a database or API to the Local Vault"
+        "  [bold]/list[/]      — List all saved data source connections"
     )
-    console.print(
-        "  [bold]/list-data-sources[/]      — List all saved data source connections"
-    )
-    console.print("  [bold]/edit-data-source[/]       — Edit a saved connection's credentials")
-    console.print("  [bold]/remove-data-source[/]     — Remove a saved connection")
-    console.print("  [bold]/test-data-source[/]       — Test a saved connection")
+    console.print("  [bold]/edit[/]       — Edit a saved connection's credentials")
+    console.print("  [bold]/remove[/]     — Remove a saved connection")
+    console.print("  [bold]/test[/]       — Test a saved connection")
     console.print(
         "  [bold]/setup[/]                  — Configure models or memory settings"
     )
@@ -3978,19 +3978,20 @@ async def _chat_loop(
             if message_content is None and stripped.startswith("/"):
                 parts = stripped.split(maxsplit=1)
                 cmd = parts[0].lower()
-                if cmd == "/connect":
-                    session = await _handle_connect(
-                        console,
-                        settings,
-                        workspace,
-                        state,
-                        self_awareness,
-                        cortex,
-                        session,
-                        episodic=episodic,
-                    )
-                    continue
-                elif cmd == "/setup":
+#                if cmd == "/connect":
+#                    session = await _handle_connect(
+#                        console,
+#                        settings,
+#                        workspace,
+#                        state,
+#                        self_awareness,
+#                        cortex,
+#                        session,
+#                        episodic=episodic,
+#                    )
+#                    continue
+#                elif cmd == "/setup":
+                if cmd == "/setup":
                     session = await _handle_setup(
                         console,
                         settings,
@@ -4007,7 +4008,7 @@ async def _chat_loop(
                 elif cmd == "/memory":
                     _handle_memory(console, settings, cortex, episodic=episodic)
                     continue
-                elif cmd == "/connect-data-source":
+                elif cmd == "/connect":
                     arg = parts[1].strip() if len(parts) > 1 else ""
                     session = await _handle_connect_datasource(
                         console,
@@ -4016,25 +4017,25 @@ async def _chat_loop(
                         prefill=arg or None,
                     )
                     continue
-                elif cmd == "/list-data-sources":
+                elif cmd == "/list":
                     _handle_list_data_sources(console)
                     continue
-                elif cmd == "/remove-data-source":
+                elif cmd == "/remove":
                     arg = parts[1].strip() if len(parts) > 1 else ""
                     if not arg:
                         console.print(
-                            "[anton.warning]Usage: /remove-data-source"
+                            "[anton.warning]Usage: /remove"
                             " <engine-name>[/]"
                         )
                         console.print()
                     else:
                         _handle_remove_data_source(console, arg)
                     continue
-                elif cmd == "/edit-data-source":
+                elif cmd == "/edit":
                     arg = parts[1].strip() if len(parts) > 1 else ""
                     if not arg:
                         console.print(
-                            "[anton.warning]Usage: /edit-data-source <engine-name>[/]"
+                            "[anton.warning]Usage: /edit <engine-name>[/]"
                         )
                         console.print()
                     else:
@@ -4045,7 +4046,7 @@ async def _chat_loop(
                             datasource_name=arg,
                         )
                     continue
-                elif cmd == "/test-data-source":
+                elif cmd == "/test":
                     arg = parts[1].strip() if len(parts) > 1 else ""
                     await _handle_test_datasource(
                         console, session._scratchpads, arg

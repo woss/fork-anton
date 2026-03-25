@@ -1032,11 +1032,11 @@ class TestActiveDatasourceScoping:
 
 class TestCliCommandRegistration:
     @pytest.mark.parametrize("cmd_name", [
-        "connect-data-source",
-        "list-data-sources",
-        "edit-data-source",
-        "remove-data-source",
-        "test-data-source",
+        "connect",
+        "list",
+        "edit",
+        "remove",
+        "test",
     ])
     def test_command_registered(self, cmd_name):
         names = [cmd.name for cmd in _cli_app.registered_commands]
@@ -1054,7 +1054,7 @@ class TestHandleListDataSources:
         with patch("anton.chat.DataVault", return_value=DataVault(vault_dir=vault_dir)):
             _handle_list_data_sources(console)
         printed = " ".join(str(c) for c in console.print.call_args_list)
-        assert "No data sources" in printed or "connect-data-source" in printed
+        assert "No data sources" in printed or "connect" in printed
 
     def test_complete_connection_shows_saved_with_engine_name(self, vault_dir, registry):
         vault = DataVault(vault_dir=vault_dir)
@@ -1174,7 +1174,7 @@ class TestHandleTestDatasource:
             await _handle_test_datasource(console, scratchpads, "")
 
         printed = " ".join(str(c) for c in console.print.call_args_list)
-        assert "Usage" in printed or "test-data-source" in printed
+        assert "Usage" in printed or "test" in printed
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1413,7 +1413,7 @@ class TestDatasourceSlashCommandBehavior:
             await _handle_test_datasource(console, scratchpads, "")
 
         printed = " ".join(str(c) for c in console.print.call_args_list)
-        assert "Usage" in printed or "test-data-source" in printed
+        assert "Usage" in printed or "test" in printed
 
     @pytest.mark.asyncio
     async def test_edit_data_source_no_arg_safe(self, vault_dir, registry, make_session):
