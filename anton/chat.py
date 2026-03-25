@@ -2847,7 +2847,7 @@ async def _handle_connect_datasource(
 
     vault = DataVault()
     registry = DatasourceRegistry()
-
+    
     if datasource_name is not None:
         _parsed = parse_connection_slug(
             datasource_name, [e.engine for e in registry.all_engines()], vault=vault
@@ -3019,14 +3019,13 @@ async def _handle_connect_datasource(
 
     console.print()
     all_engines = registry.all_engines()
-
     if prefill:
         answer = prefill
     else:
         console.print(
             "[anton.cyan](anton)[/] Which data source would you like to connect?\n"
         )
-        console.print("        [bold]  0.[/bold] Create a custom datasource")
+        console.print("       [bold]  0.[/bold] Create a custom datasource")
         for i, e in enumerate(all_engines, 1):
             console.print(f"        [bold]{i:>2}.[/bold] {e.display_name}")
         console.print()
