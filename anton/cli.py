@@ -817,7 +817,7 @@ def version() -> None:
     console.print(f"Anton v{__version__}")
 
 
-@app.command("connect-data-source")
+@app.command("connect")
 def connect_data_source(
     ctx: typer.Context,
     slug: str = typer.Argument(
@@ -827,7 +827,7 @@ def connect_data_source(
     """Connect a database or API to the Local Vault.
 
     Pass an existing connection slug (e.g. postgres-mydb) to reconnect using
-    stored credentials without re-entering them.  Use /edit-data-source to
+    stored credentials without re-entering them.  Use /edit to
     update credentials for an existing connection.
     """
     import asyncio
@@ -865,7 +865,7 @@ def connect_data_source(
     asyncio.run(_run())
 
 
-@app.command("list-data-sources")
+@app.command("list")
 def list_data_sources(ctx: typer.Context) -> None:
     """List all saved data source connections in the Local Vault."""
     from anton.chat import _handle_list_data_sources
@@ -873,7 +873,7 @@ def list_data_sources(ctx: typer.Context) -> None:
     _handle_list_data_sources(console)
 
 
-@app.command("edit-data-source")
+@app.command("edit")
 def edit_data_source(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Connection slug to edit (e.g. postgres-mydb)."),
@@ -914,7 +914,7 @@ def edit_data_source(
     asyncio.run(_run())
 
 
-@app.command("remove-data-source")
+@app.command("remove")
 def remove_data_source(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Connection slug to remove (e.g. postgres-mydb)."),
@@ -925,7 +925,7 @@ def remove_data_source(
     _handle_remove_data_source(console, name)
 
 
-@app.command("test-data-source")
+@app.command("test")
 def test_data_source(
     ctx: typer.Context,
     name: str = typer.Argument(..., help="Connection slug to test (e.g. postgres-mydb)."),
