@@ -3008,64 +3008,10 @@ async def _handle_connect_datasource(
                     credentials[f.name] = value
 
         if engine_def.test_snippet:
-            while True:
-                console.print()
-                console.print("[anton.cyan](anton)[/] Got it. Testing connection…")
-
-                # Temporarily save credentials so inject_env(flat=True) can load them,
-                # then restore all namespaced env vars in the finally block.
-                vault.save(edit_engine, edit_name, credentials)
-                vault.clear_ds_env()
-                vault.inject_env(edit_engine, edit_name, flat=True)
-                _register_secret_vars(engine_def)  # flat names for scrubbing during test
-                try:
-                    pad = await scratchpads.get_or_create("__datasource_test__")
-                    await pad.reset()
-                    if engine_def.pip:
-                        await pad.install_packages([engine_def.pip])
-                    cell = await pad.execute(engine_def.test_snippet)
-                finally:
-                    _restore_namespaced_env(vault)
-
-                if cell.error or (cell.stdout.strip() != "ok" and cell.stderr.strip()):
-                    error_text = (
-                        cell.error or cell.stderr.strip() or cell.stdout.strip()
-                    )
-                    first_line = next(
-                        (ln for ln in error_text.splitlines() if ln.strip()), error_text
-                    )
-                    console.print()
-                    console.print("[anton.warning](anton)[/] ✗ Connection failed.")
-                    console.print()
-                    console.print(f"        Error: {first_line}")
-                    console.print()
-                    retry = (
-                        Prompt.ask(
-                            "[anton.cyan](anton)[/] Would you like to re-enter your credentials? [y/n]",
-                            console=console,
-                            default="n",
-                        )
-                        .strip()
-                        .lower()
-                    )
-                    if retry != "y":
-                        return session
-                    console.print()
-                    for f in active_fields:
-                        if not f.secret:
-                            continue
-                        value = Prompt.ask(
-                            f"[anton.cyan](anton)[/] {f.name}",
-                            password=True,
-                            console=console,
-                            default="",
-                        )
-                        if value:
-                            credentials[f.name] = value
-                    continue
-
-                console.print("[anton.success]        ✓ Connected successfully![/]")
-                break
+            if not await _run_connection_test(
+                console, scratchpads, vault, engine_def, credentials, active_fields
+            ):
+                return session
 
         vault.save(edit_engine, edit_name, credentials)
         _restore_namespaced_env(vault)
