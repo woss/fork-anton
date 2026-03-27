@@ -3603,21 +3603,29 @@ async def _handle_test_datasource(
 def _print_slash_help(console: Console) -> None:
     """Print available slash commands."""
     console.print()
+
     console.print("[anton.cyan]Available commands:[/]")
-#    console.print(
-#        "  [bold]/connect[/]                — Connect to a Minds server and select a mind"
-#    )
-    console.print("  [bold]/connect[/]      — Connect a database or API to the Local Vault")
-    console.print("  [bold]/list[/]         — List all saved data source connections")
-    console.print("  [bold]/edit[/]         — Edit a saved connection's credentials")
-    console.print("  [bold]/remove[/]       — Remove a saved connection")
-    console.print("  [bold]/test[/]         — Test a saved connection")
-    console.print("  [bold]/setup[/]        — Configure models or memory settings")
-    console.print("  [bold]/memory[/]       — Show memory status dashboard")
-    console.print("  [bold]/paste[/]        — Attach clipboard image to your message")
-    console.print("  [bold]/resume[/]       — Resume a previous chat session")
-    console.print("  [bold]/help[/]         — Show this help message")
-    console.print("  [bold]exit[/]          — Quit the chat")
+    
+    console.print("\n[bold]Data Connections[/]")
+    console.print("  [bold]/connect[/]   — Connect a database or API to your Local Vault")
+    console.print("  [bold]/list[/]      — List all saved connections")
+    console.print("  [bold]/edit[/]      — Edit credentials for an existing connection")
+    console.print("  [bold]/remove[/]    — Remove a saved connection")
+    console.print("  [bold]/test[/]      — Test a saved connection")
+    
+    console.print("\n[bold]Workspace[/]")
+    console.print("  [bold]/minds[/]     — Connect to an existing Mind")
+    console.print("  [bold]/setup[/]     — Configure models and memory settings")
+    console.print("  [bold]/memory[/]    — View memory status and usage")
+    
+    console.print("\n[bold]Chat Tools[/]")
+    console.print("  [bold]/paste[/]     — Attach an image from your clipboard")
+    console.print("  [bold]/resume[/]    — Continue a previous session")
+    
+    console.print("\n[bold]General[/]")
+    console.print("  [bold]/help[/]      — Show this help menu")
+    console.print("  [bold]exit[/]       — Exit the chat")
+    
     console.print()
 
 
@@ -3986,20 +3994,19 @@ async def _chat_loop(
             if message_content is None and stripped.startswith("/"):
                 parts = stripped.split(maxsplit=1)
                 cmd = parts[0].lower()
-#                if cmd == "/connect":
-#                    session = await _handle_connect(
-#                        console,
-#                        settings,
-#                        workspace,
-#                        state,
-#                        self_awareness,
-#                        cortex,
-#                        session,
-#                        episodic=episodic,
-#                    )
-#                    continue
-#                elif cmd == "/setup":
-                if cmd == "/setup":
+                if cmd == "/minds":
+                    session = await _handle_connect(
+                        console,
+                        settings,
+                        workspace,
+                        state,
+                        self_awareness,
+                        cortex,
+                        session,
+                        episodic=episodic,
+                    )
+                    continue
+                elif cmd == "/setup":
                     session = await _handle_setup(
                         console,
                         settings,
