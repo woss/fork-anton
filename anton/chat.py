@@ -2870,13 +2870,13 @@ async def _run_connection_test(
 
         if cell.error or (cell.stdout.strip() != "ok" and cell.stderr.strip()):
             error_text = cell.error or cell.stderr.strip() or cell.stdout.strip()
-            first_line = next(
-                (ln for ln in error_text.splitlines() if ln.strip()), error_text
+            last_line = next(
+                (ln for ln in reversed(error_text.splitlines()) if ln.strip()), error_text
             )
             console.print()
             console.print("[anton.warning](anton)[/] ✗ Connection failed.")
             console.print()
-            console.print(f"        Error: {first_line}")
+            console.print(f"        Error: {last_line}")
             console.print()
             retry = (
                 Prompt.ask(
