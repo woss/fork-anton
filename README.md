@@ -12,11 +12,10 @@
 Business intelligence was supposed to give you the right data, at the right time, to get real work done.
 
 That is Anton. You ask questions in plain language, and Anton takes ownership of the entire analytical process:
-it pulls and unifies data from multiple sources, runs the analysis, surfaces insights, builds rich dashboards, suggests next steps, and can even take action - A business intelligence agent that works like an expert analyst — at machine speed.
+it pulls and unifies data from multiple sources, runs the analysis, surfaces insights, builds rich dashboards, suggests next steps, and can even take action - A business intelligence agent that works like an expert analyst — 24/7, at machine speed.
 
----
 
-## Quick start - how it works
+## Quick start 
 
 **macOS / Linux:**
 ```bash
@@ -28,10 +27,12 @@ curl -sSf https://raw.githubusercontent.com/mindsdb/anton/main/install.sh | sh &
 irm https://raw.githubusercontent.com/mindsdb/anton/main/install.ps1 | iex
 ```
 
-Run it by simply typing the command:
+That's it, you can now run it by simply typing the command:
 ```
 anton
 ```
+
+## Using Anton
 
 Talk to Anton like a person, for example, ask Anton this:
 
@@ -47,13 +48,6 @@ That's the point: you describe a problem in plain language, and Anton assembles 
 
 
 ```text
-        ▐
-   ▄█▀██▀█▄   ♡♡♡♡
- ██  (°ᴗ°) ██
-   ▀█▄██▄█▀          ▄▀█ █▄ █ ▀█▀ █▀█ █▄ █
-    ▐   ▐            █▀█ █ ▀█  █  █▄█ █ ▀█
-    ▐   ▐
-
 anton> Dashboard is open in your browser.
 Summary: Concentration risk is your #1 issue. If you're comfortable being a high-conviction NVDA...
 ```
@@ -126,8 +120,11 @@ When you run `anton` in a directory:
 - `.anton/` — workspace folder containing scratchpad state, episodic memory, and local secrets.  
 - `.anton/anton.md` — optional project context (Anton reads this at conversation start).  
 - `.anton/.env` — workspace configuration variables file (local file). 
-- `.anton/episodes/` — episodic memories (JSONL), one file per session.
-
+- `.anton/episodes/*` — episodic memories, one file per session.
+- `.anton/memory/rules.md` - behavioral rules: Always/never/when rules (e.g., never hardcode credentials, how to build HTML)     
+- `.anton/memory/lessons.md` - factual knowledge: Things I've learned (stock API quirks, dashboard patterns, data fetching notes)   
+- `.anton/memory/topics/*` - topic-specific lessons:  Deeper notes organized by subject (dashboard-visualization, stock-data-api, etc.) 
+                                         
 Override the working folder:
 ```bash
 anton --folder /path/to/workspace
