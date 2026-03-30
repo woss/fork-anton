@@ -51,7 +51,7 @@ Summary: Concentration risk is your #1 issue. If you're comfortable being a high
 ```
 
 <p align="center"> 
-        <img width="800" alt="Anton's response" src="https://github.com/user-attachments/assets/2ae1b93d-1ae8-45b0-a4a0-dfda3c62840d" />
+        <img width="800" alt="Anton's response" src="https://github.com/user-attachments/assets/6dc6ee81-2a2c-4358-be05-bfe884c32685" />
 </p>
 
 **Key features**
@@ -60,10 +60,10 @@ Summary: Concentration risk is your #1 issue. If you're comfortable being a high
 - **Multi-layer memory & continuous learning** - session, semantic and long-term business knowledge.
 
 #### Connect your data
-Although you can use Anton with just public data, the real power happens when you combine that with your own data. This can be anything from a file or database to an application API. Open the Local Vault with `/connect` command, then follow the prompts to add your secrets. Anton only has access to secret names - secret values remain hidden.
+Although you can use Anton with just public data, the real power happens when you combine that with your own data. This can be anything: files,  database, applications APIs,... etc. Open the Local Vault with `/connect` command, then follow the prompts to add your secrets. Anton only has access to secret names - secret values remain hidden.
 
 ```powershell
-you> /connect
+/connect
 
 (anton) Choose a data source:
 
