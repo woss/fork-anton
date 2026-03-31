@@ -4349,22 +4349,22 @@ async def _chat_loop(
                 message_content = stripped
 
             if settings.minds_api_key and settings.minds_url:
-                _minds_base = settings.minds_url.rstrip("/")
-                _token_status = check_minds_token_limits(
-                    _minds_base, settings.minds_api_key, verify=settings.minds_ssl_verify
+                minds_base = settings.minds_url.rstrip("/")
+                token_status = check_minds_token_limits(
+                    minds_base, settings.minds_api_key, verify=settings.minds_ssl_verify
                 )
-                if _token_status.status is TokenLimitStatus.EXCEEDED:
-                    pct = int(_token_status.used / _token_status.limit * 100) if _token_status.limit else 100
+                if token_status.status is TokenLimitStatus.EXCEEDED:
+                    pct = int(token_status.used / token_status.limit * 100) if token_status.limit else 100
                     console.print(
                         f"[anton.error]Token limit reached: {_token_status.used:,} / {_token_status.limit:,} tokens used ({pct}%). "
                         "Visit mdb.ai to upgrade your plan or top up your tokens.[/]"
                     )
                     console.print()
                     continue
-                elif _token_status.status is TokenLimitStatus.WARNING:
-                    pct = int(_token_status.used / _token_status.limit * 100) if _token_status.limit else 80
+                elif token_status.status is TokenLimitStatus.WARNING:
+                    pct = int(token_status.used / token_status.limit * 100) if token_status.limit else 80
                     console.print(
-                        f"[anton.warning]Approaching token limit: {_token_status.used:,} / {_token_status.limit:,} tokens used ({pct}%). "
+                        f"[anton.warning]Approaching token limit: {token_status.used:,} / {token_status.limit:,} tokens used ({pct}%). "
                         "Visit mdb.ai to upgrade your plan or top up your tokens.[/]"
                     )
                     console.print()
