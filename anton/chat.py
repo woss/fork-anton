@@ -2804,7 +2804,7 @@ async def _handle_add_custom_datasource(
 
     # Offer help before collecting credentials
     help_answer = await _prompt_or_cancel(
-        "(anton) Need instructions on how to obtain these credentials?",
+        "(anton) Do you need instructions on how to obtain these credentials?",
         choices=["y", "n"], default="n",
     )
     if help_answer is None:
@@ -3001,20 +3001,24 @@ async def _show_credential_help(
     field_descriptions = ", ".join(
         f"{f.name} ({f.description})" for f in all_fields
     )
+    storage_note = (
+        "The credentials will be stored securely in Anton's Local Vault — "
+        "do NOT suggest storage tips, password managers, or safe-keeping advice."
+    )
     if current_field is not None:
         prompt = (
             f"I'm connecting to {service_name} and need to provide: {field_descriptions}\n\n"
             f"I need help with the '{current_field.name}' field"
             f" ({current_field.description}).\n\n"
             "Give me a brief step-by-step guide on where and how to get this credential. "
-            "Be concise — numbered steps, no fluff."
+            f"Be concise — numbered steps, no fluff. {storage_note}"
         )
         heading = f"[anton.cyan](anton)[/] How to get [bold]{current_field.name}[/]:"
     else:
         prompt = (
             f"I'm connecting to {service_name} and need these credentials: {field_descriptions}\n\n"
             "Give me a brief step-by-step guide on where and how to obtain each of these. "
-            "Be concise — numbered steps, no fluff."
+            f"Be concise — numbered steps, no fluff. {storage_note}"
         )
         heading = f"[anton.cyan](anton)[/] How to get credentials for [bold]{service_name}[/]:"
 
@@ -3480,7 +3484,7 @@ async def _handle_connect_datasource(
     console.print()
 
     help_answer = await _prompt_or_cancel(
-        "(anton) Need instructions on how to obtain these credentials?",
+        "(anton) Do you need instructions on how to obtain these credentials?",
         choices=["y", "n"], default="n",
     )
     if help_answer is None:
