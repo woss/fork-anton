@@ -26,26 +26,12 @@ class TestDetectColorMode:
         with patch.dict("os.environ", {"ANTON_THEME": "LIGHT"}, clear=False):
             assert detect_color_mode() == "light"
 
-    def test_colorfgbg_dark(self):
-        with patch.dict("os.environ", {"COLORFGBG": "15;0", "ANTON_THEME": ""}, clear=False):
-            assert detect_color_mode() == "dark"
-
-    def test_colorfgbg_light(self):
-        # COLORFGBG is no longer read; without ANTON_THEME the result is always "dark"
-        with patch.dict("os.environ", {"COLORFGBG": "0;15", "ANTON_THEME": ""}, clear=False):
-            assert detect_color_mode() == "dark"
-
     def test_default_is_dark(self):
-        with patch.dict("os.environ", {"ANTON_THEME": "", "COLORFGBG": ""}, clear=False):
+        with patch.dict("os.environ", {"ANTON_THEME": ""}, clear=False):
             assert detect_color_mode() == "dark"
 
-    def test_macos_dark_mode(self):
-        with patch.dict("os.environ", {"ANTON_THEME": "", "COLORFGBG": ""}, clear=False):
-            assert detect_color_mode() == "dark"
-
-    def test_macos_light_mode(self):
-        # macOS subprocess detection was removed; default is "dark"
-        with patch.dict("os.environ", {"ANTON_THEME": "", "COLORFGBG": ""}, clear=False):
+    def test_unrecognised_value_falls_back_to_dark(self):
+        with patch.dict("os.environ", {"ANTON_THEME": "solarized"}, clear=False):
             assert detect_color_mode() == "dark"
 
 
