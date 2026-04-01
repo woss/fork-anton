@@ -578,7 +578,22 @@ class Scratchpad:
             if in_result:
                 lines.append(line)
 
-        yield json.loads("\n".join(lines))
+        raw_text = "\n".join(lines)
+        try:
+            yield json.loads(raw_text)
+        except json.JSONDecodeError:
+            # Try to extract valid JSON by finding the outermost { }
+            try:
+                start = raw_text.index("{")
+                end = raw_text.rindex("}") + 1
+                yield json.loads(raw_text[start:end])
+            except (ValueError, json.JSONDecodeError):
+                yield {
+                    "stdout": raw_text,
+                    "stderr": "",
+                    "logs": "",
+                    "error": "Scratchpad result was malformed (JSON parse failed). Output above may be partial.",
+                }
 
     def view(self) -> str:
         """Format all cells with their outputs."""
