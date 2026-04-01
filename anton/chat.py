@@ -45,6 +45,8 @@ from anton.tools import (
     format_cell_result,
     prepare_scratchpad_exec,
 )
+from anton.checks import TokenLimitInfo, TokenLimitStatus, check_minds_token_limits
+from anton.minds_http import minds_request
 from anton.data_vault import DataVault, _slug_env_prefix
 from anton.datasource_registry import (
     DatasourceEngine,
@@ -84,11 +86,10 @@ _RESILIENCE_NUDGE = (
     "Only involve the user if the problem truly requires something only they can provide."
 )
 
-# ── Interactive prompt copy ───────────────────────────────────────────────────
-_PROMPT_YN = "(y/n)"
+# TODO: Is this enough for now?
+TOKEN_STATUS_CACHE_TTL = 60.0
+
 _PROMPT_RECONNECT_CANCEL = "(reconnect/cancel)"
-_PROMPT_SELECT_Q = "(or q to cancel)"
-_PROMPT_MEMORY_SAVE = "(y/n/pick numbers)"
 
 
 class ChatSession:
@@ -129,7 +130,7 @@ class ChatSession:
         self._history_store = history_store
         self._session_id = session_id
         self._cancel_event = asyncio.Event()
-        self._active_datasource: str | None = None  # slug like "hubspot-2"
+        self._active_datasource: str | None = None
         self._scratchpads = ScratchpadManager(
             coding_provider=coding_provider,
             coding_model=getattr(llm_client, "coding_model", ""),
@@ -1843,51 +1844,12 @@ def _describe_minds_connection_error(err: Exception) -> tuple[str, str]:
     )
 
 
-def _minds_request(
-    url: str,
-    api_key: str,
-    *,
-    method: str = "GET",
-    payload: bytes | None = None,
-    verify: bool = True,
-    timeout: int = 30,
-) -> bytes:
-    """Shared HTTP helper for all Minds API calls.
-
-    Sets headers that pass through Cloudflare bot detection.
-    """
-    import ssl
-    import urllib.request
-
-    req = urllib.request.Request(url, data=payload, method=method)
-    req.add_header("Authorization", f"Bearer {api_key}")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Accept", "application/json")
-    # Browser-like headers to avoid Cloudflare bot detection
-    req.add_header(
-        "User-Agent",
-        "Mozilla/5.0 (compatible; Anton/1.0; +https://github.com/mindsdb/anton)",
-    )
-    req.add_header("Accept-Language", "en-US,en;q=0.9")
-    req.add_header("Accept-Encoding", "identity")
-    req.add_header("Connection", "keep-alive")
-
-    ctx = None
-    if not verify:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-
-    with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
-        return resp.read()
-
-
 def _minds_list_minds(base_url: str, api_key: str, verify: bool = True) -> list[dict]:
     """Fetch minds list from a Minds server using stdlib urllib."""
     import json as _json
 
     url = f"{base_url}/api/v1/minds/"  # trailing slash required
-    raw = _minds_request(url, api_key, verify=verify)
+    raw = minds_request(url, api_key, verify=verify)
     data = _json.loads(raw.decode())
 
     if isinstance(data, list):
@@ -1895,32 +1857,6 @@ def _minds_list_minds(base_url: str, api_key: str, verify: bool = True) -> list[
     return data.get("minds", data if isinstance(data, list) else [])
 
 
-def _check_minds_limits(base_url: str, api_key: str, verify: bool = True) -> bool:
-    """Return True if token usage has reached 80% of any configured limit.
-
-    Returns False if the endpoint is unreachable, limits are unlimited (-1),
-    or usage is below the threshold.
-    """
-    import json as _json
-
-    url = f"{base_url}/api/v1/limits/"
-    try:
-        raw = _minds_request(url, api_key, verify=verify, timeout=5)
-        data = _json.loads(raw.decode())
-    except Exception:
-        return False
-
-    tokens = data.get("tokens", {})
-    limits = tokens.get("limit", {})
-    usage = tokens.get("usage", {})
-
-    for period in ("lifetime", "monthly"):
-        lim = limits.get(period, -1)
-        used = usage.get("billing_cycle" if period == "monthly" else period, 0)
-        if lim != -1 and lim > 0 and used / lim >= 0.8:
-            return True
-
-    return False
 
 
 def _minds_get_mind(
@@ -1931,7 +1867,7 @@ def _minds_get_mind(
 
     url = f"{base_url}/api/v1/minds/{mind_name}"
     try:
-        raw = _minds_request(url, api_key, verify=verify, timeout=15)
+        raw = minds_request(url, api_key, verify=verify, timeout=15)
         return _json.loads(raw.decode())
     except Exception:
         return None
@@ -1975,7 +1911,7 @@ def _minds_list_datasources(
     import json as _json
 
     url = f"{base_url}/api/v1/datasources"
-    raw = _minds_request(url, api_key, verify=verify)
+    raw = minds_request(url, api_key, verify=verify)
     data = _json.loads(raw.decode())
 
     # Response may be a list or a dict with a "datasources" key
@@ -1996,7 +1932,7 @@ def _minds_test_llm(base_url: str, api_key: str, verify: bool = True) -> bool:
     )).encode()
 
     try:
-        _minds_request(url, api_key, method="POST", payload=payload, verify=verify)
+        minds_request(url, api_key, method="POST", payload=payload, verify=verify)
         return True
     except urllib.error.HTTPError as e:
         if e.code == 429:
@@ -4123,6 +4059,8 @@ async def _chat_loop(
 
     toolbar = {"stats": "", "status": ""}
     display = StreamDisplay(console, toolbar=toolbar)
+    last_token_status: TokenLimitInfo | None = None
+    last_token_status_checked_at: float | None = None
 
     def _bottom_toolbar():
         stats = toolbar["stats"]
@@ -4376,17 +4314,6 @@ async def _chat_loop(
             if message_content is None:
                 message_content = stripped
 
-            if settings.minds_api_key and settings.minds_url:
-                _minds_base = settings.minds_url.rstrip("/")
-                if _check_minds_limits(
-                    _minds_base, settings.minds_api_key, verify=settings.minds_ssl_verify
-                ):
-                    console.print(
-                        "[anton.error]You've reached 80% of your token limit. "
-                        "Visit mdb.ai to upgrade your plan or top up your tokens.[/]"
-                    )
-                    console.print()
-
             _query_count += 1
             if _query_count == 1:
                 send_event(settings, "anton_first_query")
@@ -4429,12 +4356,38 @@ async def _chat_loop(
                             total_output += event.response.usage.output_tokens
 
                 elapsed = time.monotonic() - t0
-                parts = [f"{elapsed:.1f}s", f"{total_input} in / {total_output} out"]
+                parts = []
+
+                if settings.minds_api_key and settings.minds_url:
+                    #TODO: Lets check if this is best solution
+                    now = time.monotonic()
+                    if last_token_status_checked_at is None or (now - last_token_status_checked_at) >= TOKEN_STATUS_CACHE_TTL:
+                        last_token_status = check_minds_token_limits(
+                            settings.minds_url.rstrip("/"),
+                            settings.minds_api_key,
+                            verify=settings.minds_ssl_verify,
+                        )
+                        last_token_status_checked_at = now
+                    if last_token_status.billing_cycle_limit > 0:
+                        _pct = last_token_status.billing_cycle_used * 100 // last_token_status.billing_cycle_limit
+                        parts.append(f"{last_token_status.billing_cycle_used:,} / {last_token_status.billing_cycle_limit:,} ({_pct}%)")
+
+                parts.append(f"{elapsed:.1f}s")
+                if not settings.minds_api_key and not settings.minds_url:
+                    parts.append(f"{total_input} in / {total_output} out")
                 if ttft is not None:
                     parts.append(f"TTFT {int(ttft * 1000)}ms")
                 toolbar["stats"] = "  ".join(parts)
                 toolbar["status"] = ""
                 display.finish()
+                if settings.minds_api_key and settings.minds_url and last_token_status is not None and last_token_status.status is TokenLimitStatus.WARNING:
+                    pct = int(last_token_status.used / last_token_status.limit * 100) if last_token_status.limit else 80
+                    console.print(
+                        f"[anton.warning]Approaching token limit: {last_token_status.used:,} / "
+                        f"{last_token_status.limit:,} tokens used ({pct}%). "
+                        "Visit mdb.ai to upgrade your plan or top up your tokens.[/]"
+                    )
+                    console.print()
                 if _query_count == 1:
                     send_event(settings, "anton_first_answer")
             except anthropic.AuthenticationError:
