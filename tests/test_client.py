@@ -80,6 +80,9 @@ class TestLLMClientFromSettings:
             settings = AntonSettings(anthropic_api_key="test-key", _env_file=None)
             client = LLMClient.from_settings(settings)
             assert isinstance(client, LLMClient)
+            MockProvider.assert_called()
+            assert client._planning_provider is MockProvider.return_value
+            assert client._coding_provider is MockProvider.return_value
 
     def test_unknown_planning_provider_raises(self):
         settings = AntonSettings(
