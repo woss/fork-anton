@@ -802,7 +802,7 @@ def _setup_openai(settings, ws) -> None:
         console.print("  [anton.warning]Please enter your API key.[/]")
     api_key = api_key.strip()
 
-    model = _setup_prompt("Model", default="gpt-4o").strip()
+    model = _setup_prompt("Model", default="gpt-5.4").strip()
 
     try:
         def _test():

@@ -14,15 +14,25 @@ Business intelligence was supposed to give you the right data, at the right time
 That is Anton. You ask questions in plain language, and Anton takes ownership of the entire analytical process:
 it pulls and unifies data from multiple sources, runs the analysis, surfaces insights, builds rich dashboards, suggests next steps, and can even take action - A business intelligence agent that works like an expert analyst — 24/7, at machine speed.
 
+![ezgif-24b9e7c74652f0dc](https://github.com/user-attachments/assets/c92f87c1-ff30-4272-92ba-49a8585d5954)
+
 
 ## Quick start 
+**macOS - Desktop App:**
 
-**macOS / Linux:**
+<a href="https://mindsdb-anton.s3.us-east-2.amazonaws.com/anton-latest-universal-signed.pkg">
+<img width="64" alt="DesktopApp" src="https://github.com/user-attachments/assets/ed7c1e3a-3700-45cc-a9a8-efb57b43dcfd" />
+</a>
+
+ Click [here to download](https://mindsdb-anton.s3.us-east-2.amazonaws.com/anton-latest-universal-signed.pkg) the Anton Desktop App for MacOS.
+
+
+**macOS / Linux - CLI:**
 ```bash
 curl -sSf https://raw.githubusercontent.com/mindsdb/anton/main/install.sh | sh && export PATH="$HOME/.local/bin:$PATH" 
 ```
 
-**Windows** (PowerShell):
+**Windows CLI** (PowerShell):
 ```powershell
 irm https://raw.githubusercontent.com/mindsdb/anton/main/install.ps1 | iex
 ```
