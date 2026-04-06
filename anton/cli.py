@@ -743,13 +743,13 @@ def _validate_openai_probe_response(response) -> None:
     message = getattr(choice, "message", None)
     content = _normalize_probe_text(getattr(message, "content", None))
 
-    if finish_reason == "length":
-        if content:
-            return
-        raise ValueError("OpenAI validation response was truncated before any content was returned.")
-
-    if content == "pong":
+    # Accept any non-empty response — different providers may not follow
+    # "Reply with exactly: pong" precisely (e.g. Gemini may think first)
+    if content:
         return
+
+    if finish_reason == "length":
+        raise ValueError("Validation response was truncated before any content was returned. The model may need a higher token limit.")
 
     raise ValueError(f"Unexpected validation response: {content or '<empty>'}")
 
@@ -869,7 +869,7 @@ def _setup_gemini(settings, ws) -> None:
             response = client.chat.completions.create(**build_chat_completion_kwargs(
                 model=model,
                 messages=[{"role": "user", "content": "Reply with exactly: pong"}],
-                max_tokens=16,
+                max_tokens=256,
             ))
             _validate_openai_probe_response(response)
 
