@@ -1796,7 +1796,6 @@ async def _handle_setup_memory(
     console.print("[anton.cyan]Memory configuration[/]")
     console.print()
 
-    # --- Memory mode ---
     console.print("  Memory mode:")
     console.print(
         r"    [bold]1[/]  Autopilot — Anton decides what to remember       [dim]\[recommended][/]"
@@ -1823,7 +1822,6 @@ async def _handle_setup_memory(
     if cortex is not None:
         cortex.mode = memory_mode
 
-    # --- Episodic memory toggle ---
     if episodic is not None:
         console.print()
         ep_status = "ON" if episodic.enabled else "OFF"
@@ -2331,7 +2329,6 @@ async def _handle_connect(
         ds_name = picked_ds if isinstance(picked_ds, str) else picked_ds.get("name", "")
         console.print(f"[anton.muted]Auto-selected datasource: {ds_name}[/]")
 
-    # --- Resolve engine type from datasources list ---
     if ds_name:
         try:
             all_datasources = list_datasources(
@@ -4361,7 +4358,6 @@ async def _chat_loop(
             _register_secret_vars(_edef, engine=_conn["engine"], name=_conn["name"])
     del _dv, _dreg
 
-    # --- Memory system (brain-inspired architecture) ---
     global_memory_dir = Path.home() / ".anton" / "memory"
     project_memory_dir = settings.workspace_path / ".anton" / "memory"
 
@@ -4385,7 +4381,6 @@ async def _chat_loop(
     if cortex.needs_compaction():
         asyncio.create_task(cortex.compact_all())
 
-    # --- Episodic memory ---
     from anton.memory.episodes import EpisodicMemory
 
     episodes_dir = settings.workspace_path / ".anton" / "episodes"
@@ -4393,7 +4388,6 @@ async def _chat_loop(
     if episodic.enabled:
         episodic.start_session()
 
-    # --- History store (for /resume) ---
     from anton.memory.history_store import HistoryStore
 
     history_store = HistoryStore(episodes_dir)
@@ -4443,15 +4437,12 @@ async def _chat_loop(
         if resumed_id:
             current_session_id = resumed_id
 
-
-    # --- Desktop first run: greeting with example ---
     if desktop_first_run and not settings.first_run_done:
         try:
             _desktop_greeting(console, settings)
         except Exception:
             pass
 
-    # --- Agent Zero: first-run staged demo (CLI onboarding) ---
     _agent_zero_query: str | None = None
     if first_run and not settings.first_run_done:
         try:
