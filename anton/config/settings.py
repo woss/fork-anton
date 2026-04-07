@@ -66,6 +66,9 @@ class AntonSettings(BaseSettings):
     minds_datasource_engine: str | None = None
     minds_ssl_verify: bool = True
 
+    # Publish service (anton-services API Gateway)
+    publish_url: str = "https://4eqbi9b2pg.execute-api.us-east-1.amazonaws.com/Prod"
+
     @field_validator("minds_ssl_verify", mode="before")
     @classmethod
     def _parse_minds_ssl_verify(cls, v):

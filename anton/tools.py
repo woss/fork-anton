@@ -165,6 +165,27 @@ CONNECT_DATASOURCE_TOOL = {
     },
 }
 
+PUBLISH_TOOL = {
+    "name": "publish",
+    "description": (
+        "Publish an HTML report or dashboard to the web so it can be shared via a public link. "
+        "Use this after generating an HTML file in .anton/output/. "
+        "The user must have a Minds (mdb.ai) API key configured. "
+        "If the key is not set, tell the user to run /publish to set it up interactively."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to the HTML file to publish (e.g. .anton/output/dashboard.html)",
+            },
+        },
+        "required": ["file_path"],
+    },
+}
+
+
 SCRATCHPAD_TOOL = {
     "name": "scratchpad",
     "description": (
@@ -493,6 +514,42 @@ async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str
         )
 
 
+async def handle_publish(session: ChatSession, tc_input: dict) -> str:
+    """Publish an HTML file to the web via anton-services."""
+    from pathlib import Path
+
+    from anton.config.settings import AntonSettings
+    from anton.publisher import publish
+
+    settings = AntonSettings()
+
+    if not settings.minds_api_key:
+        return (
+            "PUBLISH FAILED: No Minds API key configured. "
+            "Ask the user to run /publish to set up their mdb.ai API key interactively."
+        )
+
+    raw_path = tc_input.get("file_path", "")
+    file_path = Path(raw_path)
+    if not file_path.is_absolute() and session._workspace:
+        file_path = Path(session._workspace.base) / raw_path
+
+    if not file_path.exists():
+        return f"PUBLISH FAILED: File not found: {file_path}"
+
+    try:
+        result = publish(
+            file_path,
+            api_key=settings.minds_api_key,
+            publish_url=settings.publish_url,
+            ssl_verify=settings.minds_ssl_verify,
+        )
+        view_url = result.get("view_url", "")
+        return f"Published successfully!\nView URL: {view_url}"
+    except Exception as e:
+        return f"PUBLISH FAILED: {e}"
+
+
 async def dispatch_tool(session: ChatSession, tool_name: str, tc_input: dict) -> str:
     """Dispatch a tool call by name. Returns result text."""
     if tool_name == "memorize":
@@ -503,5 +560,7 @@ async def dispatch_tool(session: ChatSession, tool_name: str, tc_input: dict) ->
         return await handle_recall(session, tc_input)
     elif tool_name == "connect_new_datasource":
         return await handle_connect_datasource(session, tc_input)
+    elif tool_name == "publish":
+        return await handle_publish(session, tc_input)
     else:
         return f"Unknown tool: {tool_name}"
