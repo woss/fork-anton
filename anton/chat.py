@@ -54,6 +54,8 @@ from anton.commands.setup import (
     handle_setup_memory,
     handle_setup_models,
 )
+from anton.commands.ui import handle_theme, print_slash_help
+from anton.commands.datasource import handle_list_data_sources, handle_remove_data_source
 from anton.prompt_utils import (
     MINDS_KEYS,
     LLM_KEYS,
@@ -3159,112 +3161,6 @@ async def _handle_connect_datasource(
     return session
 
 
-def _handle_list_data_sources(console: Console) -> None:
-    """Print all saved Local Vault connections in a table with status."""
-    from rich.table import Table
-
-    vault = DataVault()
-    registry = DatasourceRegistry()
-    conns = vault.list_connections()
-    console.print()
-    if not conns:
-        console.print("[anton.muted]No data sources connected yet.[/]")
-        console.print("[anton.muted]Use /connect to add one.[/]")
-        console.print()
-        return
-
-    table = Table(title="Local Vault — Saved Connections", show_lines=False)
-    table.add_column("Name", style="bold")
-    table.add_column("Source")
-    table.add_column("Status")
-
-    for c in conns:
-        slug = f"{c['engine']}-{c['name']}"
-        engine_def = registry.get(c["engine"])
-        source = engine_def.display_name if engine_def else c["engine"]
-        fields = vault.load(c["engine"], c["name"]) or {}
-
-        if not fields:
-            status = "[yellow]incomplete[/]"
-        elif engine_def and engine_def.auth_method != "choice":
-            required = [f.name for f in engine_def.fields if f.required]
-            missing = [name for name in required if name not in fields]
-            status = "[yellow]incomplete[/]" if missing else "[green]saved[/]"
-        else:
-            # choice-auth engine or unknown engine: presence of any field = saved
-            status = "[green]saved[/]"
-
-        table.add_row(slug, source, status)
-
-    console.print(table)
-    console.print()
-
-
-async def _handle_remove_data_source(console: Console, slug: str) -> None:
-    """Delete a connection from the Local Vault by slug (engine-name)."""
-    vault = DataVault()
-    registry = DatasourceRegistry()
-
-    if not slug:
-        connections = vault.list_connections()
-        if not connections:
-            console.print("[anton.muted]No saved connections to remove.[/]")
-            console.print()
-            return
-        console.print()
-        console.print("[anton.cyan](anton)[/] Which connection do you want to remove?\n")
-        for i, c in enumerate(connections, 1):
-            conn_slug = f"{c['engine']}-{c['name']}"
-            engine_def = registry.get(c["engine"])
-            label = engine_def.display_name if engine_def else c["engine"]
-            console.print(f"          [bold]{i:>2}.[/bold] {conn_slug} [dim]({label})[/]")
-        console.print()
-        choices = [str(i) for i in range(1, len(connections) + 1)]
-        pick = await prompt_or_cancel("(anton) Enter a number", choices=choices)
-        if pick is None:
-            console.print("[anton.muted]Cancelled.[/]")
-            console.print()
-            return
-        picked = connections[int(pick) - 1]
-        slug = f"{picked['engine']}-{picked['name']}"
-
-    _parsed = parse_connection_slug(slug, [e.engine for e in registry.all_engines()], vault=vault)
-    if _parsed is None:
-        console.print(
-            f"[anton.warning]Invalid name '{slug}'. Use engine-name format.[/]"
-        )
-        console.print()
-        return
-    engine, name = _parsed
-    if vault.load(engine, name) is None:
-        console.print(f"[anton.warning]No connection '{slug}' found.[/]")
-        console.print()
-        return
-
-    confirm = await prompt_or_cancel(
-        f"(anton) Remove '{slug}' from Local Vault?",
-        choices=["y", "n"], default="n",
-    )
-    if confirm is not None and confirm.strip().lower() == "y":
-        vault.delete(engine, name)
-        _restore_namespaced_env(vault)
-        engine_def = registry.get(engine)
-        if engine_def is not None and engine_def.custom:
-            remaining = [
-                c for c in vault.list_connections() if c["engine"] == engine
-            ]
-            if not remaining:
-                user_path = DatasourceRegistry._USER_PATH
-                if user_path.is_file():
-                    updated = _remove_engine_block(
-                        user_path.read_text(encoding="utf-8"), engine
-                    )
-                    user_path.write_text(updated, encoding="utf-8")
-                    registry.reload()
-        console.print(f"[anton.success]Removed {slug}.[/]")
-    else:
-        console.print("[anton.muted]Cancelled.[/]")
-    console.print()
 
 
 async def _handle_test_datasource(
@@ -3355,29 +3251,6 @@ async def _handle_test_datasource(
             f"[anton.success]        ✓ Connection test passed for"
             f" [bold]{slug}[/bold]![/]"
         )
-    console.print()
-
-
-def _handle_theme(console: Console, arg: str) -> None:
-    """Switch the color theme (light/dark)."""
-    import os
-    from anton.channel.theme import detect_color_mode, build_rich_theme
-
-    current = detect_color_mode()
-
-    if not arg:
-        new_mode = "light" if current == "dark" else "dark"
-    elif arg in ("light", "dark"):
-        new_mode = arg
-    else:
-        console.print(f"[anton.warning]Unknown theme '{arg}'. Use: /theme light | /theme dark[/]")
-        console.print()
-        return
-
-    os.environ["ANTON_THEME"] = new_mode
-    # Re-apply the theme to the console
-    console._theme_stack.push_theme(build_rich_theme(new_mode))
-    console.print(f"[anton.success]Theme set to {new_mode}.[/]")
     console.print()
 
 
@@ -3525,39 +3398,6 @@ async def _handle_publish(
 
     if view_url:
         webbrowser.open(view_url)
-
-
-def _print_slash_help(console: Console) -> None:
-    """Print available slash commands."""
-    console.print()
-
-    console.print("[anton.cyan]Available commands:[/]")
-
-    console.print("\n[bold]LLM Provider[/]")
-    console.print("  [bold]/llm[/]      — Change LLM provider or API key")
-
-    console.print("\n[bold]Data Connections[/]")
-    console.print("  [bold]/connect[/]   — Connect a database or API to your Local Vault")
-    console.print("  [bold]/list[/]      — List all saved connections")
-    console.print("  [bold]/edit[/]      — Edit credentials for an existing connection")
-    console.print("  [bold]/remove[/]    — Remove a saved connection")
-    console.print("  [bold]/test[/]      — Test a saved connection")
-    
-    console.print("\n[bold]Workspace[/]")
-    console.print("  [bold]/setup[/]     — Configure models and memory settings")
-    console.print("  [bold]/memory[/]    — View memory status and usage")
-    console.print("  [bold]/theme[/]     — Switch theme (light/dark)")
-
-    console.print("\n[bold]Chat Tools[/]")
-    console.print("  [bold]/paste[/]     — Attach an image from your clipboard")
-    console.print("  [bold]/resume[/]    — Continue a previous session")
-    console.print("  [bold]/publish[/]   — Publish an HTML report to the web")
-    
-    console.print("\n[bold]General[/]")
-    console.print("  [bold]/help[/]      — Show this help menu")
-    console.print("  [bold]exit[/]       — Exit the chat")
-    
-    console.print()
 
 
 class _EscapeWatcher:
@@ -4355,11 +4195,11 @@ async def _chat_loop(
                     )
                     continue
                 elif cmd == "/list":
-                    _handle_list_data_sources(console)
+                    handle_list_data_sources(console)
                     continue
                 elif cmd == "/remove":
                     arg = parts[1].strip() if len(parts) > 1 else ""
-                    await _handle_remove_data_source(console, arg)
+                    await handle_remove_data_source(console, arg)
                     continue
                 elif cmd == "/edit":
                     arg = parts[1].strip() if len(parts) > 1 else ""
@@ -4399,14 +4239,14 @@ async def _chat_loop(
                     continue
                 elif cmd == "/theme":
                     arg = parts[1].strip() if len(parts) > 1 else ""
-                    _handle_theme(console, arg)
+                    handle_theme(console, arg)
                     continue
                 elif cmd == "/publish":
                     arg = parts[1].strip() if len(parts) > 1 else ""
                     await _handle_publish(console, settings, workspace, arg)
                     continue
                 elif cmd == "/help":
-                    _print_slash_help(console)
+                    print_slash_help(console)
                     continue
                 elif cmd == "/paste":
                     if not await _ensure_clipboard(console):
