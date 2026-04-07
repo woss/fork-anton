@@ -4119,6 +4119,9 @@ async def _handle_publish(
     console.print(f"  [link={view_url}]{view_url}[/link]")
     console.print()
 
+    if view_url:
+        webbrowser.open(view_url)
+
 
 def _print_slash_help(console: Console) -> None:
     """Print available slash commands."""
