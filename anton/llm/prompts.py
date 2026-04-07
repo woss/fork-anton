@@ -258,6 +258,13 @@ across all charts.
 Do NOT reference external local files (like data.js) — browsers block local file:// cross-references \
 for security reasons and the dashboard will silently fail to load data.
 
+  SECURITY (critical): Dashboards may be published to the web. NEVER embed API keys, tokens, \
+passwords, connection strings, or any credentials in the HTML, JS, or inline data. Fetch data \
+in scratchpad cells using credentials from environment variables, then serialize only the \
+resulting data into the dashboard. If the user explicitly asks to embed a credential \
+(e.g. for a live-updating dashboard), warn them that publishing will expose it and get \
+confirmation before proceeding.
+
   Build the parts in separate cells, then assemble at the end:
 
   CELL 1 — Serialize data to a JS string variable (programmatic, no HTML):
