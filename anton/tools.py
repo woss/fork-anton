@@ -1,76 +1,16 @@
-"""Dynamic tool registry — decorator-based registration for chat tools."""
-
-from __future__ import annotations
+"""Extra tools for the open source terminal agent."""
 
 from typing import TYPE_CHECKING
 
+from anton.core.tools.tool_defs import ToolDef
+
 if TYPE_CHECKING:
-    from anton.chat import ChatSession
-
-
-CONNECT_DATASOURCE_TOOL = {
-    "name": "connect_new_datasource",
-    "description": (
-        "Connect a new data source to Anton's Local Vault. Call this when the user "
-        "asks a question that requires data from a source that isn't connected yet "
-        "(e.g. email, database, CRM, API). This starts an interactive connection flow "
-        "where the user enters their credentials.\n\n"
-        "Pass the datasource type/name (e.g. 'gmail', 'postgres', 'salesforce', 'hubspot'). "
-        "Anton will match it to the right connector and guide the user through setup.\n\n"
-        "Do NOT print any message before calling this tool — it handles the user-facing output."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "engine": {
-                "type": "string",
-                "description": "The datasource type or name (e.g. 'gmail', 'postgres', 'snowflake', 'hubspot')",
-            },
-            "reason": {
-                "type": "string",
-                "description": "Brief explanation of why this datasource is needed",
-            },
-        },
-        "required": ["engine"],
-    },
-}
-
-PUBLISH_TOOL = {
-    "name": "publish_or_preview",
-    "description": (
-        "Call this after generating an HTML dashboard or report in .anton/output/. "
-        "Actions: 'ask' (default) prompts the user to preview/publish/skip interactively. "
-        "'preview' opens the file in the browser immediately. "
-        "'publish' publishes to the web immediately. "
-        "Use 'preview' or 'publish' when the user has already stated their intent. "
-        "Use 'ask' after generating a new dashboard to let the user choose."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "file_path": {
-                "type": "string",
-                "description": "Path to the HTML file (e.g. .anton/output/dashboard.html)",
-            },
-            "title": {
-                "type": "string",
-                "description": "Short title describing the dashboard (e.g. 'BTC & Macro Dashboard')",
-            },
-            "action": {
-                "type": "string",
-                "enum": ["ask", "preview", "publish"],
-                "description": "What to do: 'ask' prompts user, 'preview' opens locally, 'publish' publishes to web",
-            },
-        },
-        "required": ["file_path"],
-    },
-}
+    from anton.core.session import ChatSession
 
 
 async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str:
     """Handle connect_new_datasource tool call — interactive connection flow."""
     engine = tc_input.get("engine", "")
-    reason = tc_input.get("reason", "")
     if not engine:
         return "Engine name is required."
 
@@ -84,7 +24,6 @@ async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str
     )
 
     from anton.commands.datasource import handle_connect_datasource
-    from anton.utils.prompt import prompt_or_cancel
     from anton.data_vault import DataVault
 
     # Check which connections exist before
@@ -134,6 +73,35 @@ async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str
         )
 
 
+CONNECT_DATASOURCE_TOOL = ToolDef(
+    name = "connect_new_datasource",
+    description = (
+        "Connect a new data source to Anton's Local Vault. Call this when the user "
+        "asks a question that requires data from a source that isn't connected yet "
+        "(e.g. email, database, CRM, API). This starts an interactive connection flow "
+        "where the user enters their credentials.\n\n"
+        "Pass the datasource type/name (e.g. 'gmail', 'postgres', 'salesforce', 'hubspot'). "
+        "Anton will match it to the right connector and guide the user through setup.\n\n"
+        "Do NOT print any message before calling this tool — it handles the user-facing output."
+    ),
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "engine": {
+                "type": "string",
+                "description": "The datasource type or name (e.g. 'gmail', 'postgres', 'snowflake', 'hubspot')",
+            },
+            "reason": {
+                "type": "string",
+                "description": "Brief explanation of why this datasource is needed",
+            },
+        },
+        "required": ["engine"],
+    },
+    handler = handle_connect_datasource,
+)
+
+
 async def handle_publish_or_preview(session: ChatSession, tc_input: dict) -> str:
     """Interactive preview/publish flow after dashboard creation."""
     import os
@@ -161,6 +129,7 @@ async def handle_publish_or_preview(session: ChatSession, tc_input: dict) -> str
     # Publish flow
     from anton.config.settings import AntonSettings
     from anton.publisher import publish
+    from anton.utils.prompt import prompt_or_cancel
 
     settings = AntonSettings()
 
@@ -220,3 +189,35 @@ async def handle_publish_or_preview(session: ChatSession, tc_input: dict) -> str
 
     return f"Published successfully!\nView URL: {view_url}"
 
+
+PUBLISH_TOOL = ToolDef(
+    name = "publish_or_preview",
+    description = (
+        "Call this after generating an HTML dashboard or report in .anton/output/. "
+        "Actions: 'ask' (default) prompts the user to preview/publish/skip interactively. "
+        "'preview' opens the file in the browser immediately. "
+        "'publish' publishes to the web immediately. "
+        "Use 'preview' or 'publish' when the user has already stated their intent. "
+        "Use 'ask' after generating a new dashboard to let the user choose."
+    ),
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to the HTML file (e.g. .anton/output/dashboard.html)",
+            },
+            "title": {
+                "type": "string",
+                "description": "Short title describing the dashboard (e.g. 'BTC & Macro Dashboard')",
+            },
+            "action": {
+                "type": "string",
+                "enum": ["ask", "preview", "publish"],
+                "description": "What to do: 'ask' prompts user, 'preview' opens locally, 'publish' publishes to web",
+            },
+        },
+        "required": ["file_path"],
+    },
+    handler = handle_publish_or_preview,
+)
