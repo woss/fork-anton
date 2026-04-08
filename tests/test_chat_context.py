@@ -11,7 +11,7 @@ import pytest
 from anton.chat import ChatSession, _handle_connect
 from anton.minds_client import describe_minds_connection_error
 from anton.config.settings import AntonSettings
-from anton.tools import MEMORIZE_TOOL
+from anton.core.tools.tool_defs import MEMORIZE_TOOL
 from anton.context.self_awareness import SelfAwarenessContext
 from anton.llm.provider import LLMResponse, ToolCall, Usage
 from anton.workspace import Workspace
@@ -81,8 +81,8 @@ def cortex(memory_dirs):
 
 class TestMemorizeTool:
     def test_tool_definition_structure(self):
-        assert MEMORIZE_TOOL["name"] == "memorize"
-        props = MEMORIZE_TOOL["input_schema"]["properties"]
+        assert MEMORIZE_TOOL.name == "memorize"
+        props = MEMORIZE_TOOL.input_schema["properties"]
         assert "entries" in props
 
     async def test_memorize_creates_rule(self, cortex, memory_dirs):
