@@ -1,4 +1,7 @@
-from anton.core.tools.tool_defs import MEMORIZE_TOOL, RECALL_TOOL, SCRATCHPAD_TOOL, ToolDef
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from anton.core.tools.tool_defs import ToolDef
 
 
 class ToolRegistry:
@@ -7,7 +10,7 @@ class ToolRegistry:
     """
     def __init__(self) -> None:
         # Register core tools.
-        self._tools = [SCRATCHPAD_TOOL, MEMORIZE_TOOL, RECALL_TOOL]
+        self._tools = []
 
     def register_tool(self, tool_def: ToolDef) -> None:
         """
