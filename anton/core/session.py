@@ -119,7 +119,7 @@ class ChatSession:
         )
         self.tool_registry = ToolRegistry()
         self._explainability_store = (
-            ExplainabilityStore(workspace.base) if workspace is not None else None
+            ExplainabilityStore(config.workspace.base) if config.workspace is not None else None
         )
         self._active_explainability: ExplainabilityCollector | None = None
 
