@@ -45,8 +45,9 @@ class ToolRegistry:
         """
         tool_defs = []
         for tool_def in self._tools:
-            # Remove the handler from the tool definition.
+            # Remove the handler and prompt from the tool definition.
             tool_def = asdict(tool_def)
             tool_def.pop("handler")
+            tool_def.pop("prompt")
             tool_defs.append(tool_def)
         return tool_defs
