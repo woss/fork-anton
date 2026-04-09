@@ -561,7 +561,7 @@ The memory system is wired into `ChatSession` and `_chat_loop()`:
 
 ```
 1. _chat_loop() startup:
-   → Creates Cortex(global_dir, project_dir, mode, llm)
+   → Creates Cortex(global_hc=Hippocampus(global_dir), project_hc=Hippocampus(project_dir), mode, llm)
    → Creates EpisodicMemory(episodes_dir, enabled=settings.episodic_memory)
    → Starts episodic session if enabled
    → Runs reconsolidation if needed

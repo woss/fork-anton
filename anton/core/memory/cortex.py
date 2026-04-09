@@ -13,7 +13,7 @@ systems to provide coherent context. The Cortex class mirrors both:
   - encode() → executive decision to encode (directing the hippocampus)
   - encoding_gate() → encoding gate modulated by the memory mode
 
-The Cortex coordinates two Hippocampus instances (global + project scope),
+The Cortex coordinates two HippocampusProtocol instances (global + project scope),
 like how the PFC coordinates retrieval from multiple brain memory systems.
 """
 
