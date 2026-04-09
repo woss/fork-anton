@@ -60,17 +60,17 @@ class ChatSystemPromptBuilder:
     def build(
         self,
         *,
-        settings,
         current_datetime: str,
         runtime_context: str,
         proactive_dashboards: bool,
+        output_dir: str,
         tool_defs: list["ToolDef"] | None = None,
         memory_context: str = "",
         project_context: str = "",
         self_awareness_context: str = "",
         datasource_context: str = "",
     ) -> str:
-        output_path = f"{Path(str(settings.output_dir)).as_posix().rstrip('/')}/"
+        output_path = f"{Path(str(output_dir)).as_posix().rstrip('/')}/"
 
         visualizations_section = self._build_visualizations_section(
             proactive_dashboards=proactive_dashboards,

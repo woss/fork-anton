@@ -4,7 +4,6 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
-from anton.core.llm.prompts import CHAT_SYSTEM_PROMPT
 from anton.core.llm.prompt_builder import ChatSystemPromptBuilder
 from anton.core.llm.provider import (
     ContextOverflowError,
@@ -106,6 +105,7 @@ class ChatSession:
         history_store: HistoryStore | None = None,
         session_id: str | None = None,
         proactive_dashboards: bool = False,
+        output_dir: str = "",
         tools: list[ToolDef] | None = None,
     ) -> None:
         self._llm = llm_client
@@ -115,6 +115,7 @@ class ChatSession:
         self._runtime_context = runtime_context
         self._proactive_dashboards = proactive_dashboards
         self._extra_tools = tools or []
+        self._output_dir = output_dir
         self._workspace = workspace
         self._console = console
         self._history: list[dict] = list(initial_history) if initial_history else []
@@ -191,23 +192,29 @@ class ChatSession:
         _current_datetime = _now.strftime("%A, %B %d, %Y at %I:%M %p")
 
         # Inject memory context (replaces old self_awareness)
+        memory_section = ""
         if self._cortex is not None:
             memory_section = await self._cortex.build_memory_context(user_message)
 
-        elif self._self_awareness is not None:
+        sa_section = ""
+        if self._self_awareness is not None and self._cortex is None:
             # Fallback for legacy usage (tests, etc.)
             sa_section = self._self_awareness.build_prompt_section()
 
         # Inject anton.md project context (user-written takes priority)
+        md_context = ""
         if self._workspace is not None:
             md_context = self._workspace.build_anton_md_context()
 
         # Inject connected datasource context without credentials
         ds_ctx = build_datasource_context(active_only=self._active_datasource)
 
+        # Ensure the registry is populated before we extract tool prompts.
+        self._build_tools()
+
         prompt_builder = ChatSystemPromptBuilder()
         prompt = prompt_builder.build(
-            settings=self._settings,
+            output_dir=self._output_dir,
             current_datetime=_current_datetime,
             runtime_context=self._runtime_context,
             proactive_dashboards=self._proactive_dashboards,

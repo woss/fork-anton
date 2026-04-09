@@ -27,6 +27,10 @@ class ToolRegistry:
         """
         self._tools.append(tool_def)
 
+    def get_tool_defs(self) -> list["ToolDef"]:
+        """Return the registered `ToolDef` objects (for prompt injection, etc.)."""
+        return list(self._tools)
+
     async def dispatch_tool(
         self, session: "ChatSession", tool_name: str, tc_input: dict
     ) -> str:
