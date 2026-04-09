@@ -5,9 +5,8 @@ import os
 
 import pytest
 
-import anton.core.backends.base as backends_base
 from anton.core.backends.base import Cell
-from anton.core.backends.local import LocalScratchpadRuntime
+from anton.core.backends.local import LocalScratchpadRuntime, _compute_timeouts
 from anton.core.backends.manager import ScratchpadManager
 
 # Alias for brevity in tests
@@ -115,8 +114,8 @@ class TestScratchpadReset:
 class TestScratchpadEdgeCases:
     async def test_timeout_kills_process(self, monkeypatch):
         """Long-running code triggers timeout."""
-        monkeypatch.setattr(backends_base, "_CELL_TIMEOUT_DEFAULT", 1)
-        monkeypatch.setattr(backends_base, "_CELL_INACTIVITY_TIMEOUT", 1)
+        monkeypatch.setenv("ANTON_CELL_TIMEOUT_DEFAULT", "1")
+        monkeypatch.setenv("ANTON_CELL_INACTIVITY_TIMEOUT", "1")
         pad = Scratchpad(name="test")
         await pad.start()
         try:
@@ -723,8 +722,8 @@ class TestProgressAndTimeouts:
 
     async def test_progress_resets_inactivity_timeout(self, monkeypatch):
         """Code that calls progress() frequently should survive even with a short inactivity timeout."""
-        monkeypatch.setattr(backends_base, "_CELL_INACTIVITY_TIMEOUT", 2)
-        monkeypatch.setattr(backends_base, "_CELL_TIMEOUT_DEFAULT", 10)
+        monkeypatch.setenv("ANTON_CELL_INACTIVITY_TIMEOUT", "2")
+        monkeypatch.setenv("ANTON_CELL_TIMEOUT_DEFAULT", "10")
         pad = Scratchpad(name="progress-keep-alive")
         await pad.start()
         try:
@@ -743,8 +742,8 @@ class TestProgressAndTimeouts:
 
     async def test_inactivity_timeout_kills_without_progress(self, monkeypatch):
         """Code that sleeps without progress() calls should be killed by inactivity timeout."""
-        monkeypatch.setattr(backends_base, "_CELL_INACTIVITY_TIMEOUT", 2)
-        monkeypatch.setattr(backends_base, "_CELL_TIMEOUT_DEFAULT", 60)
+        monkeypatch.setenv("ANTON_CELL_INACTIVITY_TIMEOUT", "2")
+        monkeypatch.setenv("ANTON_CELL_TIMEOUT_DEFAULT", "60")
         pad = Scratchpad(name="no-progress")
         await pad.start()
         try:
@@ -782,14 +781,14 @@ class TestProgressAndTimeouts:
 
     async def test_compute_timeouts_no_estimate(self):
         """No estimate should use defaults."""
-        from anton.core.backends.base import _compute_timeouts
+        from anton.core.backends.local import _compute_timeouts
         total, inactivity = _compute_timeouts(0)
         assert total == 120.0
         assert inactivity == 30.0
 
     async def test_compute_timeouts_with_estimate(self):
         """Estimate should scale total timeout and inactivity with no hard cap."""
-        from anton.core.backends.base import _compute_timeouts
+        from anton.core.backends.local import _compute_timeouts
 
         # Small estimate: max(10*2, 10+30) = max(20, 40) = 40
         total, inactivity = _compute_timeouts(10)
