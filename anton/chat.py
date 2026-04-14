@@ -18,6 +18,7 @@ from anton.clipboard import (
     save_clipboard_image,
 )
 from anton.core.session import ChatSession, ChatSessionConfig
+from anton.core.llm.prompt_builder import SystemPromptContext
 from anton.core.llm.provider import (
     TokenLimitExceeded,
     StreamComplete,
@@ -990,7 +991,7 @@ async def _chat_loop(
         self_awareness=self_awareness,
         cortex=cortex,
         episodic=episodic,
-        runtime_context=runtime_context,
+        system_prompt_context=SystemPromptContext(runtime_context=runtime_context),
         workspace=workspace,
         console=console,
         history_store=history_store,

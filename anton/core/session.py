@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 from anton.core.backends.base import Cell, ScratchpadRuntimeFactory
 from anton.core.backends.local import local_scratchpad_runtime_factory
 from anton.core.datasources.data_vault import DataVault
-from anton.core.llm.prompt_builder import ChatSystemPromptBuilder
+from anton.core.llm.prompt_builder import ChatSystemPromptBuilder, SystemPromptContext
 from anton.core.memory.cerebellum import Cerebellum
 from anton.core.memory.skills import SkillStore
 from anton.core.tools.recall_skill import RECALL_SKILL_TOOL
@@ -69,7 +69,7 @@ class ChatSessionConfig:
     self_awareness: SelfAwarenessContext | None = None
     cortex: Cortex | None = None
     episodic: EpisodicMemory | None = None
-    runtime_context: str = ""
+    system_prompt_context: SystemPromptContext = field(default_factory=SystemPromptContext)
     workspace: Workspace | None = None
     data_vault: DataVault | None = None
     console: Console | None = None
@@ -96,7 +96,7 @@ class ChatSession:
         self._self_awareness = config.self_awareness
         self._cortex = config.cortex
         self._episodic = config.episodic
-        self._runtime_context = config.runtime_context
+        self._system_prompt_context = config.system_prompt_context
         self._proactive_dashboards = config.proactive_dashboards
         self._extra_tools = config.tools
         self._output_dir = config.output_dir
@@ -306,7 +306,7 @@ class ChatSession:
         prompt = prompt_builder.build(
             output_dir=self._output_dir,
             current_datetime=_current_datetime,
-            runtime_context=self._runtime_context,
+            system_prompt_context=self._system_prompt_context,
             proactive_dashboards=self._proactive_dashboards,
             tool_defs=self.tool_registry.get_tool_defs(),
             memory_context=memory_section,
