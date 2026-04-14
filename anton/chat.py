@@ -986,12 +986,16 @@ async def _chat_loop(
     # Build runtime context so the LLM knows what it's running on
     runtime_context = build_runtime_context(settings)
 
+    output_path = f"{settings.output_dir.rstrip('/')}/"
     session = ChatSession(ChatSessionConfig(
         llm_client=state["llm_client"],
         self_awareness=self_awareness,
         cortex=cortex,
         episodic=episodic,
-        system_prompt_context=SystemPromptContext(runtime_context=runtime_context),
+        system_prompt_context=SystemPromptContext(
+            runtime_context=runtime_context,
+            resource_storage_context=f"Save output to `{output_path}` (create it if needed).",
+        ),
         workspace=workspace,
         console=console,
         history_store=history_store,

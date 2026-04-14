@@ -86,16 +86,19 @@ def rebuild_session(
         if settings.coding_provider == "anthropic"
         else settings.openai_api_key
     ) or ""
+    output_path = f"{settings.output_dir.rstrip('/')}/"
     return ChatSession(ChatSessionConfig(
         llm_client=state["llm_client"],
         self_awareness=self_awareness,
         cortex=cortex,
         episodic=episodic,
-        system_prompt_context=SystemPromptContext(runtime_context=runtime_context),
+        system_prompt_context=SystemPromptContext(
+            runtime_context=runtime_context,
+            resource_storage_context=f"Save output to `{output_path}` (create it if needed).",
+        ),
         workspace=workspace,
         console=console,
         history_store=history_store,
         session_id=session_id,
         proactive_dashboards=settings.proactive_dashboards,
-        output_dir=settings.output_dir,
     ))
