@@ -335,6 +335,7 @@ async def _handle_publish(
     file_arg: str = "",
 ) -> None:
     """Handle /publish command — publish an HTML report to the web."""
+    import json
     import webbrowser
     from pathlib import Path
 
@@ -436,15 +437,44 @@ async def _handle_publish(
         console.print()
         return
 
-    # 3. Publish
+    # 3. Check if this file was previously published
+    published_json = output_dir / ".published.json"
+    published_map = {}
+    try:
+        if published_json.is_file():
+            published_map = json.loads(published_json.read_text())
+    except Exception:
+        pass
+
+    report_id = None
+    file_key = target.name
+    prev = published_map.get(file_key)
+
+    if prev and prev.get("report_id"):
+        console.print(f"  [anton.muted]Previously published: {prev.get('url', '')}[/]")
+        update_choice = await prompt_or_cancel(
+            "  Update existing report, or publish as new?",
+            choices=["update", "new", "u", "n"],
+            choices_display="update/new",
+            default="update",
+        )
+        if update_choice is None:
+            console.print()
+            return
+        if update_choice in ("update", "u"):
+            report_id = prev["report_id"]
+
+    # 4. Publish
     from rich.live import Live
     from rich.spinner import Spinner
 
-    with Live(Spinner("dots", text="  Publishing...", style="anton.cyan"), console=console, transient=True):
+    action_text = "  Updating..." if report_id else "  Publishing..."
+    with Live(Spinner("dots", text=action_text, style="anton.cyan"), console=console, transient=True):
         try:
             result = publish(
                 target,
                 api_key=settings.minds_api_key,
+                report_id=report_id,
                 publish_url=settings.publish_url,
                 ssl_verify=settings.minds_ssl_verify,
             )
@@ -454,9 +484,30 @@ async def _handle_publish(
             return
 
     view_url = result.get("view_url", "")
-    console.print(f"  [anton.success]Published![/]")
+    returned_report_id = result.get("report_id", "")
+    version = result.get("version", 1)
+    unchanged = result.get("unchanged", False)
+
+    if unchanged:
+        console.print(f"  [anton.muted]Already up to date (v{version})[/]")
+    elif report_id:
+        console.print(f"  [anton.success]Updated! (v{version})[/]")
+    else:
+        console.print(f"  [anton.success]Published![/]")
     console.print(f"  [link={view_url}]{view_url}[/link]")
     console.print()
+
+    # 5. Save mapping
+    if returned_report_id:
+        published_map[file_key] = {
+            "report_id": returned_report_id,
+            "url": view_url,
+            "last_md5": result.get("md5", ""),
+        }
+        try:
+            published_json.write_text(json.dumps(published_map, indent=2))
+        except Exception:
+            pass
 
     if view_url:
         webbrowser.open(view_url)
