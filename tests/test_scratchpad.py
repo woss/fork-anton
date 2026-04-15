@@ -16,8 +16,8 @@ Scratchpad = LocalScratchpadRuntime
 
 _SCRATCHPAD_DEFAULTS = dict(
     coding_provider="anthropic",
-    coding_model="claude-sonnet-4-6",
-    coding_api_key="test",
+    coding_model="",
+    coding_api_key="",
     coding_base_url="",
 )
 
