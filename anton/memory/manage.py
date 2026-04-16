@@ -4,6 +4,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from prompt_toolkit import PromptSession
+
 from rich.console import Console
 
 from anton.utils.prompt import prompt_or_cancel
@@ -88,19 +90,19 @@ class MemoryManage:
             "lessons":     self.lessons,
             "profile":     self.profile,
             "episodes":    self.episodes,
-            "edit":        self.edit,
-            "delete":      self.delete,
-            "prune":       self.prune,
-            "vacuum":      self.vacuum,
-            "consolidate": self.consolidate,
-            "reset":       self.reset,
+            # "edit":        self.edit,
+            # "delete":      self.delete,
+            # "prune":       self.prune,
+            # "vacuum":      self.vacuum,
+            # "consolidate": self.consolidate,
+            # "reset":       self.reset,
         }
 
     # ------------------------------------------------------------------
     # Entry point
     # ------------------------------------------------------------------
 
-    def handle(self, cmd: str) -> None:
+    async def handle(self, cmd: str) -> None:
         """Dispatch /memory [sub-command] or show the status dashboard."""
         sub_cmd = cmd.removeprefix("/memory").strip()
         parts = sub_cmd.split()
@@ -118,13 +120,13 @@ class MemoryManage:
             c.print()
             c.print(f"[anton.error]Unknown command: {cmd}[/]")
             c.print()
-            return self.help()
+            return await self.help()
 
         handler = self.SUBCOMMANDS[parts[0]]
 
-        return handler(*parts[1:])
+        return await handler(*parts[1:])
 
-    def help(self) -> None:
+    async def help(self) -> None:
         """Show available /memory sub-commands."""
         c = self.console
         c.print()
@@ -163,7 +165,7 @@ class MemoryManage:
         for label, hc in self._pick_hc(scope):
             self._print_entries(f"{label} — Rules", hc.recall_rules() or "")
 
-    def lessons(self, action: str = None, num: str = None) -> None:
+    async def lessons(self, action: str = None, num: str = None) -> None:
         """Display stored lessons, numbered for easy reference."""
         global_items = dict(enumerate(self.cortex.global_hc.get_lessons(), start=1))
         project_items = dict(enumerate(self.cortex.project_hc.get_lessons(), start=len(global_items) + 1))
@@ -186,18 +188,20 @@ class MemoryManage:
 
             if action == 'delete':
                 if num in global_items:
-                    return self.cortex.global_hc.delete_lesson(global_items[num].id)
+                    return self.cortex.global_hc.del_lesson(global_items[num].id)
                 else:
-                    return self.cortex.project_hc.delete_lesson(global_items[num].id)
+                    return self.cortex.project_hc.del_lesson(project_items[num].id)
 
             elif action == 'edit':
-                old_text = index[num].text
-                text = self.get_updated_text_from_user(old_text)
+                text = await prompt_or_cancel("Edit the text>", default_text=index[num].text)
+
+                if text is None:
+                    return
 
                 if num in global_items:
                     return self.cortex.global_hc.update_lesson(global_items[num].id, text)
                 else:
-                    return self.cortex.project_hc.update_lesson(global_items[num].id, text)
+                    return self.cortex.project_hc.update_lesson(project_items[num].id, text)
 
             return self.console.print(f"Unknown action use one of: delete, edit")
 
@@ -206,12 +210,12 @@ class MemoryManage:
             self._print_numbered_items(global_items)
 
         if len(project_items) > 0:
-            self._print_title('Global')
+            self._print_title('Project')
             self._print_numbered_items(project_items)
 
         self.console.print(f"Actions:")
-        self.console.print(f"  delete <num> to delete record")
-        self.console.print(f"  edit <num> to update record")
+        self.console.print(f" /memory lessons delete <n> to delete record")
+        self.console.print(f" /memory lessons edit <n> to update record")
 
 
     def profile(self, scope: str = "both") -> None:
@@ -240,31 +244,31 @@ class MemoryManage:
     # Edit / Delete
     # ------------------------------------------------------------------
 
-    def edit(self, args: list[str]) -> None:
-        """Open a memory file in $EDITOR."""
-        if self.cortex is None:
-            self.console.print("[anton.warning]Memory system not initialized.[/]")
-            return
-
-        kind = args[0] if args else None
-        scope = _parse_scope(args, 1)
-        if scope == "both":
-            scope = "project"
-
-        file_map = {"rules": "rules.md", "lessons": "lessons.md", "profile": "profile.md"}
-        if kind not in file_map:
-            self.console.print(
-                f"[anton.warning]Unknown kind {kind!r}. Use: rules, lessons, profile[/]"
-            )
-            return
-
-        _, hc = self._pick_hc(scope)[0]
-        path: Path = hc._dir / file_map[kind]
-        path.touch()
-
-        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nano"
-        self.console.print(f"[dim]Opening {path} in {editor}…[/]")
-        subprocess.call([editor, str(path)])
+    # def edit(self, args: list[str]) -> None:
+    #     """Open a memory file in $EDITOR."""
+    #     if self.cortex is None:
+    #         self.console.print("[anton.warning]Memory system not initialized.[/]")
+    #         return
+    #
+    #     kind = args[0] if args else None
+    #     scope = _parse_scope(args, 1)
+    #     if scope == "both":
+    #         scope = "project"
+    #
+    #     file_map = {"rules": "rules.md", "lessons": "lessons.md", "profile": "profile.md"}
+    #     if kind not in file_map:
+    #         self.console.print(
+    #             f"[anton.warning]Unknown kind {kind!r}. Use: rules, lessons, profile[/]"
+    #         )
+    #         return
+    #
+    #     _, hc = self._pick_hc(scope)[0]
+    #     path: Path = hc._dir / file_map[kind]
+    #     path.touch()
+    #
+    #     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nano"
+    #     self.console.print(f"[dim]Opening {path} in {editor}…[/]")
+    #     subprocess.call([editor, str(path)])
 
     def delete(self, args: list[str]) -> None:
         """Delete a specific numbered entry from a memory file.
@@ -380,17 +384,12 @@ class MemoryManage:
         console = self.console
         identity = hc.recall_identity()
         rules = hc.recall_rules()
-        lessons_raw = hc.recall_lessons(token_budget=None)
         rule_count = (
             sum(1 for ln in rules.splitlines() if ln.strip().startswith("- "))
             if rules
             else 0
         )
-        lesson_count = (
-            sum(1 for ln in lessons_raw.splitlines() if ln.strip().startswith("- "))
-            if lessons_raw
-            else 0
-        )
+        lesson_count = len(hc.get_lessons())
         topics: list[str] = []
         if hc._topics_dir.is_dir():
             topics = [

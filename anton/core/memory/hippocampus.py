@@ -45,11 +45,13 @@ class Engram:
     source: Literal["user", "consolidation", "llm"] = "llm"
 
 
+
 @dataclass
 class Entry:
 
     text: str
-    created_at: dt.datetime = None
+    updated_at: dt.datetime = None
+    topic: str = ""
     def __post_init__(self):
         self.id = hashlib.sha256(self.text.encode("utf-8")).hexdigest()
 
@@ -115,19 +117,50 @@ class Hippocampus:
         except (OSError, UnicodeDecodeError):
             return ""
 
+    @staticmethod
+    def _extract_topic(text: str) -> tuple[str, str|None, dt.datetime|None]:
+        """Find and remove metadata comment from an entry line.
+
+        Parses trailing <!-- topic:slug ts:YYYY-MM-DD --> annotations written
+        by encode_lesson / encode_rule and returns the three parts separately
+        so callers get clean display text alongside structured metadata.
+
+        Returns:
+            (text_without_topic, topic, topic_date)
+            topic and topic_date are empty strings when absent.
+        """
+        match = re.search(r"\s*<!--(.*?)-->\s*$", text)
+        if not match:
+            return text.strip(), "", None
+
+        meta = match.group(1)
+
+        topic_match = re.search(r"topic:(\S+)", meta)
+        ts_match = re.search(r"ts:(\S+)", meta)
+
+        topic = topic_match.group(1) if topic_match else ""
+        date = ts_match.group(1) if ts_match else ""
+        just_text = text[: match.start()].strip()
+        try:
+            topic_date = dt.datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            try:
+                topic_date = dt.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                topic_date = None
+
+        return just_text, topic, topic_date
+
     def recall_lessons(self, token_budget: int|None = 1000) -> str:
         """Load semantic knowledge (lessons.md), most recent first, within budget.
 
         Brain analog: Anterior Temporal Lobe — the convergence hub for semantic
         facts distilled from many episodes. Budget enforced at ~4 chars/token.
         """
-        return '\n'.join([
-            entry.text
-            for entry in self.get_lessons(token_budget)
-        ])
+        return self._lessons_to_text(self.get_lessons(token_budget))
 
 
-    def get_lessons(self, token_budget: int = 1000) -> list[Entry]:
+    def get_lessons(self, token_budget: int = None) -> list[Entry]:
         """Load semantic knowledge (lessons.md), most recent first, within budget.
 
         Brain analog: Anterior Temporal Lobe — the convergence hub for semantic
@@ -154,10 +187,16 @@ class Hippocampus:
             else:
                 header_lines.append(ln)
 
-        entries = [
-            Entry(text=text)
-            for text in header_lines
-        ]
+        entries = []
+        for text in entry_lines:
+            text, topic, updated_at = self._extract_topic(text)
+            entries.append(
+                Entry(
+                    text=text.removeprefix("- "),
+                    topic=topic,
+                    updated_at=updated_at
+                )
+            )
 
         if token_budget is None:
             return entries
@@ -167,7 +206,7 @@ class Hippocampus:
 
         # Budget: ~4 chars per token
         char_budget = token_budget * 4
-        result_lines = list(header_lines)
+        result_lines = []
         used = sum(len(ln) for ln in result_lines)
 
         for ln in entries:
@@ -186,11 +225,8 @@ class Hippocampus:
                 entries_out.append(entry)
 
         if len(entries_out) != len(entries):
-            lessons = [
-                entry.text for entry in entries_out
-            ]
+            self._encode_with_lock(self._lessons_path, self._lessons_to_text(entries_out), mode="write")
 
-            self._encode_with_lock(self._rules_path, "".join(lessons), mode="write")
 
     def update_lesson(self, id, text):
         entries = self.get_lessons()
@@ -201,13 +237,31 @@ class Hippocampus:
             entry.text = text
             entry.created_at = dt.datetime.now()
 
-            lessons = [
-                entry.text for entry in entries
-            ]
-
-            self._encode_with_lock(self._rules_path, "".join(lessons), mode="write")
+            self._encode_with_lock(self._lessons_path, self._lessons_to_text(entries), mode="write")
 
             break
+
+    @staticmethod
+    def _lessons_to_text(entries: list[Entry]) -> str:
+        """Serialize a list of Entry objects back to lessons.md line format.
+
+        Mirrors encode_lesson: appends a <!-- topic:slug ts:YYYY-MM-DD -->
+        annotation when the entry has a topic, otherwise emits a plain bullet.
+        """
+        lines = []
+        for entry in entries:
+            if entry.topic:
+                if entry.updated_at:
+                    ts = entry.updated_at.strftime("%Y-%m-%d")
+                else:
+                    ts = time.strftime("%Y-%m-%d")
+                lines.append(f"- {entry.text} <!-- topic:{entry.topic} ts:{ts} -->\n")
+            else:
+                lines.append(f"- {entry.text}\n")
+
+        header = "# Lessons\n"
+        return header + "".join(lines)
+
 
     def recall_topic(self, slug: str) -> str:
         """Load deep domain expertise on demand (topics/{slug}.md).

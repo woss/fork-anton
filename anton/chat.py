@@ -1209,7 +1209,7 @@ async def _chat_loop(
                     )
                     continue
                 elif cmd == "/memory":
-                    memory_manage.handle(cmd=stripped)
+                    await memory_manage.handle(cmd=stripped)
                     continue
                 elif cmd == "/connect":
                     arg = parts[1].strip() if len(parts) > 1 else ""
