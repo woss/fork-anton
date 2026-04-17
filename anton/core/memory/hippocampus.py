@@ -38,11 +38,11 @@ class Engram:
     """
 
     text: str
-    kind: Literal["always", "never", "when", "lesson", "profile"] = None
-    scope: Literal["global", "project"] = None
-    confidence: Literal["high", "medium", "low"] = "medium"
+    kind: Literal["always", "never", "when", "lesson", "profile"] | None = None
+    scope: Literal["global", "project"] | None = None
+    confidence: Literal["high", "medium", "low"] | None = None
     topic: str = None
-    source: Literal["user", "consolidation", "llm"] = "llm"
+    source: Literal["user", "consolidation", "llm"]  | None = None
     updated_at: dt.datetime = None
 
     def __post_init__(self):
@@ -372,6 +372,27 @@ class Hippocampus:
 
         return entries
 
+    def del_rule(self, id):
+        entries = self.get_rules()
+        entries_out = []
+        for entry in entries:
+            if entry.id != id:
+                entries_out.append(entry)
+
+        self.save_rules(entries_out)
+
+    def update_rule(self, id, text):
+        entries = self.get_rules()
+
+        for entry in entries:
+            if entry.id != id:
+                continue
+            entry.text = text
+            entry.created_at = dt.datetime.now()
+
+            self.save_rules(entries)
+            return
+
     def save_rules(self, rules: list[Engram]) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
         sections: dict[str, list[Engram]] = {"always": [], "never": [], "when": []}
@@ -408,8 +429,9 @@ class Hippocampus:
 
         new_rule = Engram(
             text=text,
-            updated_at=time.strftime("%Y-%m-%d"),
+            updated_at=dt.datetime.now(),
             confidence=confidence,
+            kind=kind,
             source=source,
         )
 
