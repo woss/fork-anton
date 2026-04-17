@@ -172,7 +172,7 @@ class MemoryManage:
                 if engram.kind != prev_kind:
                     self.console.print(f"  [dim]{engram.kind}[/]")
                     prev_kind = engram.kind
-                self.console.print(f"    [dim]{n:>3}.[/]  {engram.text}")
+                self._print_numbered_item(n, engram)
 
         self.console.print(f"Actions:")
         self.console.print(f" /memory rules delete <n> to delete record")
@@ -218,13 +218,12 @@ class MemoryManage:
 
             return self.console.print(f"Unknown action use one of: delete, edit")
 
-        if len(global_items) > 0:
-            self._print_title('Global')
-            self._print_numbered_items(global_items)
-
-        if len(project_items) > 0:
-            self._print_title('Project')
-            self._print_numbered_items(project_items)
+        for scope_title, items in [("Global", global_items), ("Project", project_items)]:
+            if not items:
+                continue
+            self._print_title(scope_title)
+            for i, item in items.items():
+                self._print_numbered_item(i, item)
 
         self.console.print(f"Actions:")
         self.console.print(f" /memory lessons delete <n> to delete record")
@@ -423,10 +422,17 @@ class MemoryManage:
         c.print(f"[anton.cyan]{title}[/]")
         c.print()
 
-    def _print_numbered_items(self, entries) -> None:
-        c = self.console
-        for n, entry in entries.items():
-            c.print(f"    [dim]{n:>3}.[/]  {entry.text}")
+    def _print_numbered_item(self, n, entry) -> None:
+        self.console.print(f"    [dim]{n:>3}.[/]  {entry.text}")
+        meta_parts = []
+        for field in ("confidence", "source", "topic"):
+            val = getattr(entry, field, None)
+            if val is not None and val not in ("medium", "llm"):
+                meta_parts.append(f"{field}:{val}")
+        if (ua := getattr(entry, "updated_at", None)) is not None:
+            meta_parts.append(f"updated:{ua.strftime('%Y-%m-%d')}")
+        if meta_parts:
+            self.console.print(f"         [anton.cyan]{' '.join(meta_parts)}[/]")
 
     def _print_entries(self, title: str, raw: str) -> None:
         """Print numbered bullet entries under a heading, grouped by markdown section."""
