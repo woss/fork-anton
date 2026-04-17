@@ -38,20 +38,13 @@ class Engram:
     """
 
     text: str
-    kind: Literal["always", "never", "when", "lesson", "profile"]
-    scope: Literal["global", "project"]
+    kind: Literal["always", "never", "when", "lesson", "profile"] = None
+    scope: Literal["global", "project"] = None
     confidence: Literal["high", "medium", "low"] = "medium"
-    topic: str = ""
+    topic: str = None
     source: Literal["user", "consolidation", "llm"] = "llm"
-
-
-
-@dataclass
-class Entry:
-
-    text: str
     updated_at: dt.datetime = None
-    topic: str = ""
+
     def __post_init__(self):
         self.id = hashlib.sha256(self.text.encode("utf-8")).hexdigest()
 
@@ -75,7 +68,6 @@ class Hippocampus:
         self._profile_path = base_dir / "profile.md"
         self._rules_path = base_dir / "rules.md"
         self._lessons_path = base_dir / "lessons.md"
-        self._topics_dir = base_dir / "topics"
 
     def recall_identity(self) -> str:
         """Load the always-on self-model (profile.md).
@@ -117,39 +109,46 @@ class Hippocampus:
         except (OSError, UnicodeDecodeError):
             return ""
 
-    @staticmethod
-    def _extract_topic(text: str) -> tuple[str, str|None, dt.datetime|None]:
-        """Find and remove metadata comment from an entry line.
+    def get_rules(self):
+        raw = self._rules_path.read_text(encoding="utf-8").strip()
 
-        Parses trailing <!-- topic:slug ts:YYYY-MM-DD --> annotations written
-        by encode_lesson / encode_rule and returns the three parts separately
-        so callers get clean display text alongside structured metadata.
+    @staticmethod
+    def _extract_metadata(text: str) -> tuple[str, dict]:
+        """Find and remove the trailing metadata comment from an entry line.
+
+        Parses <!-- key:value ... --> annotations and returns structured
+        metadata as a dict whose keys match Engram fields. 'ts' maps to
+        'updated_at' and is parsed into a datetime; all other keys are kept
+        as strings.
 
         Returns:
-            (text_without_topic, topic, topic_date)
-            topic and topic_date are empty strings when absent.
+            (clean_text, metadata_dict)
+            metadata_dict is empty when no comment is present.
         """
         match = re.search(r"\s*<!--(.*?)-->\s*$", text)
         if not match:
-            return text.strip(), "", None
+            return text.strip(), {}
 
-        meta = match.group(1)
+        raw: dict[str, str] = dict(re.findall(r"(\w+):(\S+)", match.group(1)))
+        clean_text = text[: match.start()].strip()
 
-        topic_match = re.search(r"topic:(\S+)", meta)
-        ts_match = re.search(r"ts:(\S+)", meta)
+        meta: dict = {}
 
-        topic = topic_match.group(1) if topic_match else ""
-        date = ts_match.group(1) if ts_match else ""
-        just_text = text[: match.start()].strip()
-        try:
-            topic_date = dt.datetime.strptime(date, "%Y-%m-%d")
-        except ValueError:
-            try:
-                topic_date = dt.datetime.strptime(date, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                topic_date = None
+        ts = raw.pop("ts", None)
+        if ts:
+            for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S"):
+                try:
+                    meta["updated_at"] = dt.datetime.strptime(ts, fmt)
+                    break
+                except ValueError:
+                    pass
 
-        return just_text, topic, topic_date
+        for key in ("topic", "kind", "confidence", "source"):
+            if key in raw:
+                if raw[key]:
+                    meta[key] = raw[key]
+
+        return clean_text, meta
 
     def recall_lessons(self, token_budget: int|None = 1000) -> str:
         """Load semantic knowledge (lessons.md), most recent first, within budget.
@@ -160,7 +159,7 @@ class Hippocampus:
         return self._lessons_to_text(self.get_lessons(token_budget))
 
 
-    def get_lessons(self, token_budget: int = None) -> list[Entry]:
+    def get_lessons(self, token_budget: int = None) -> list[Engram]:
         """Load semantic knowledge (lessons.md), most recent first, within budget.
 
         Brain analog: Anterior Temporal Lobe — the convergence hub for semantic
@@ -189,14 +188,8 @@ class Hippocampus:
 
         entries = []
         for text in entry_lines:
-            text, topic, updated_at = self._extract_topic(text)
-            entries.append(
-                Entry(
-                    text=text.removeprefix("- "),
-                    topic=topic,
-                    updated_at=updated_at
-                )
-            )
+            text, meta = self._extract_metadata(text)
+            entries.append(Engram(text=text.removeprefix("- "), **meta))
 
         if token_budget is None:
             return entries
@@ -242,41 +235,47 @@ class Hippocampus:
             break
 
     @staticmethod
-    def _lessons_to_text(entries: list[Entry]) -> str:
-        """Serialize a list of Entry objects back to lessons.md line format.
+    def _lessons_to_text(entries: list[Engram], header="Lessons") -> str:
+        """Serialize a list of Engram objects back to lessons.md line format.
 
-        Mirrors encode_lesson: appends a <!-- topic:slug ts:YYYY-MM-DD -->
-        annotation when the entry has a topic, otherwise emits a plain bullet.
+        Writes all non-None/non-empty Engram fields into a trailing
+        <!-- key:value --> comment. 'updated_at' is serialised as 'ts'.
         """
         lines = []
         for entry in entries:
-            if entry.topic:
-                if entry.updated_at:
-                    ts = entry.updated_at.strftime("%Y-%m-%d")
-                else:
-                    ts = time.strftime("%Y-%m-%d")
-                lines.append(f"- {entry.text} <!-- topic:{entry.topic} ts:{ts} -->\n")
-            else:
-                lines.append(f"- {entry.text}\n")
+            parts: list[str] = []
 
-        header = "# Lessons\n"
-        return header + "".join(lines)
+            for key in ("confidence", "source", "topic"):
+                val = getattr(entry, key)
+                if val is not None and val != "":
+                    parts.append(f"{key}:{val}")
 
+            ts = (
+                entry.updated_at.strftime("%Y-%m-%d")
+                if entry.updated_at
+                else time.strftime("%Y-%m-%d")
+            )
+            parts.append(f"ts:{ts}")
+
+            lines.append(f"- {entry.text} <!-- {' '.join(parts)} -->\n")
+
+        return f"# {header}\n" + "".join(lines)
 
     def recall_topic(self, slug: str) -> str:
         """Load deep domain expertise on demand (topics/{slug}.md).
 
         Brain analog: Cortical Association Areas — specialized regions activated
-        associatively when contextual cues indicate relevance.
+        associative
+        ly when contextual cues indicate relevance.
         """
-        safe_slug = self._sanitize_slug(slug)
-        path = self._topics_dir / f"{safe_slug}.md"
-        if not path.is_file():
-            return ""
-        try:
-            return path.read_text(encoding="utf-8").strip()
-        except (OSError, UnicodeDecodeError):
-            return ""
+        slug = self._sanitize_slug(slug)
+
+        items = []
+        for item in self.get_lessons():
+            if item.topic == slug:
+                items.append(item)
+
+        return self._lessons_to_text(items, header=slug)
 
     def recall_scratchpad_wisdom(self) -> str:
         """Retrieve procedural knowledge relevant to scratchpad execution.
@@ -308,16 +307,17 @@ class Hippocampus:
                 if stripped not in parts:
                     parts.append(stripped)
 
-        # Check topics/scratchpad-*.md files
-        if self._topics_dir.is_dir():
-            for path in sorted(self._topics_dir.iterdir()):
-                if path.name.startswith("scratchpad-") and path.suffix == ".md":
-                    try:
-                        content = path.read_text(encoding="utf-8").strip()
-                        if content:
-                            parts.append(content)
-                    except (OSError, UnicodeDecodeError):
-                        continue
+        # are topics/scratchpad-*.md files created somewhere?
+        # # Check topics/scratchpad-*.md files
+        # if self._topics_dir.is_dir():
+        #     for path in sorted(self._topics_dir.iterdir()):
+        #         if path.name.startswith("scratchpad-") and path.suffix == ".md":
+        #             try:
+        #                 content = path.read_text(encoding="utf-8").strip()
+        #                 if content:
+        #                     parts.append(content)
+        #             except (OSError, UnicodeDecodeError):
+        #                 continue
 
         return "\n".join(parts)
 
@@ -427,21 +427,22 @@ class Hippocampus:
                 return
             self._encode_with_lock(self._lessons_path, entry, mode="append")
 
+        # topics are insinde of lessons
         # Also write to topic file if topic is substantial
-        if topic:
-            self._topics_dir.mkdir(parents=True, exist_ok=True)
-            slug = self._sanitize_slug(topic)
-            topic_path = self._topics_dir / f"{slug}.md"
-            if not topic_path.is_file():
-                self._encode_with_lock(
-                    topic_path,
-                    f"# {topic}\n{entry}",
-                    mode="write",
-                )
-            else:
-                existing = topic_path.read_text(encoding="utf-8")
-                if text not in self._extract_entry_texts(existing):
-                    self._encode_with_lock(topic_path, entry, mode="append")
+        # if topic:
+        #     self._topics_dir.mkdir(parents=True, exist_ok=True)
+        #     slug = self._sanitize_slug(topic)
+        #     topic_path = self._topics_dir / f"{slug}.md"
+        #     if not topic_path.is_file():
+        #         self._encode_with_lock(
+        #             topic_path,
+        #             f"# {topic}\n{entry}",
+        #             mode="write",
+        #         )
+        #     else:
+        #         existing = topic_path.read_text(encoding="utf-8")
+        #         if text not in self._extract_entry_texts(existing):
+        #             self._encode_with_lock(topic_path, entry, mode="append")
 
     def rewrite_identity(self, entries: list[str]) -> None:
         """Replace the identity snapshot (profile.md) — full rewrite, not append.

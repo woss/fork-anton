@@ -90,12 +90,6 @@ class MemoryManage:
             "lessons":     self.lessons,
             "profile":     self.profile,
             "episodes":    self.episodes,
-            # "edit":        self.edit,
-            # "delete":      self.delete,
-            # "prune":       self.prune,
-            # "vacuum":      self.vacuum,
-            # "consolidate": self.consolidate,
-            # "reset":       self.reset,
         }
 
     # ------------------------------------------------------------------
@@ -147,7 +141,6 @@ class MemoryManage:
         c.print("  [bold dim]Maintenance[/]")
         c.print("  [bold]/memory prune[/]                                  — remove outdated/low-value entries")
         c.print("  [bold]/memory vacuum[/]                                 — deduplicate and compact")
-        c.print("  [bold]/memory consolidate[/]                            — trigger manual consolidation")
         c.print("  [bold]/memory reset [project|global|all][/]             — wipe a scope")
         c.print()
         c.print("  [bold]/memory help[/]                                   — show this message")
@@ -316,26 +309,6 @@ class MemoryManage:
             )
 
     # ------------------------------------------------------------------
-    # Maintenance (stubs)
-    # ------------------------------------------------------------------
-
-    def prune(self) -> None:
-        """Remove outdated or low-value memory entries."""
-        pass
-
-    def vacuum(self) -> None:
-        """Deduplicate and compact memory storage."""
-        pass
-
-    def consolidate(self) -> None:
-        """Trigger manual memory consolidation."""
-        pass
-
-    def reset(self, scope: str = "all") -> None:
-        """Wipe a memory scope ('project', 'global', or 'all')."""
-        pass
-
-    # ------------------------------------------------------------------
     # Dashboard
     # ------------------------------------------------------------------
 
@@ -355,8 +328,8 @@ class MemoryManage:
             console.print()
             return
 
-        global_total = self._show_scope("Global Memory", self.cortex.global_hc)
-        project_total = self._show_scope("Project Memory", self.cortex.project_hc)
+        global_total = self._info_scope("Global Memory", self.cortex.global_hc)
+        project_total = self._info_scope("Project Memory", self.cortex.project_hc)
 
         total = global_total + project_total
         console.print(f"  Total entries: [bold]{total}[/]")
@@ -380,7 +353,8 @@ class MemoryManage:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _show_scope(self, label: str, hc) -> int:
+    def _info_scope(self, label: str, hc) -> int:
+
         console = self.console
         identity = hc.recall_identity()
         rules = hc.recall_rules()
@@ -389,12 +363,12 @@ class MemoryManage:
             if rules
             else 0
         )
-        lesson_count = len(hc.get_lessons())
-        topics: list[str] = []
-        if hc._topics_dir.is_dir():
-            topics = [
-                p.stem for p in sorted(hc._topics_dir.iterdir()) if p.suffix == ".md"
-            ]
+        lessons = hc.get_lessons()
+        topics = {
+            entry.topic
+            for entry in lessons
+            if entry.topic
+        }
 
         console.print(f"  [anton.cyan]{label}[/] [dim]({hc._dir})[/]")
         if identity:
@@ -413,13 +387,13 @@ class MemoryManage:
         else:
             console.print("    Identity:  [dim](empty)[/]")
         console.print(f"    Rules:     {rule_count}")
-        console.print(f"    Lessons:   {lesson_count}")
+        console.print(f"    Lessons:   {len(lessons)}")
         if topics:
             console.print(f"    Topics:    {', '.join(topics)}")
         else:
             console.print("    Topics:    [dim](none)[/]")
         console.print()
-        return rule_count + lesson_count
+        return rule_count + len(lessons)
 
     def _pick_hc(self, scope: str) -> list[tuple[str, object]]:
         """Return [(label, hc)] for the given scope string."""
