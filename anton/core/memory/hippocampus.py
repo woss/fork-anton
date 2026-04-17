@@ -109,7 +109,7 @@ class Hippocampus:
 
     # ---------- identity -------------------
 
-    def recall_identity(self) -> str:
+    def recall_identities(self) -> str:
         """Load the always-on self-model (profile.md).
 
         Brain analog: medial Prefrontal Cortex / Default Mode Network.
@@ -123,18 +123,42 @@ class Hippocampus:
         except (OSError, UnicodeDecodeError):
             return ""
 
-    # def get_identities(self):
-    #     as_text = self.recall_identity()
-    #     entries = []
-    #     if as_text:
-    #         for line in as_text.splitlines():
-    #             stripped = line.strip()
-    #             if stripped.startswith("- "):
-    #                 entries.append(stripped[2:])
-    #             elif stripped and not stripped.startswith("#"):
-    #                 entries.append(stripped)
-    #     return entries
+    def get_identities(self) -> list[Engram]:
+        """Load identity profile as Engrams."""
+        content = self.recall_identities()
+        engrams = []
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- "):
+                text = stripped[2:]
+            elif stripped and not stripped.startswith("#"):
+                text = stripped
+            else:
+                continue
+            if text:
+                engrams.append(Engram(text=text))
+        return engrams
 
+    def del_identity(self, id):
+        entries = self.get_identities()
+        entries_out = []
+        for entry in entries:
+            if entry.id != id:
+                entries_out.append(entry)
+
+        self.save_identities(entries_out)
+
+    def update_identity(self, id, text):
+        entries = self.get_identities()
+
+        for entry in entries:
+            if entry.id != id:
+                continue
+            entry.text = text
+            entry.created_at = dt.datetime.now()
+
+            self.save_identities(entries)
+            return
 
     def rewrite_identity(self, entries: list[str]) -> None:
         """Replace the identity snapshot (profile.md) — full rewrite, not append.
@@ -143,8 +167,32 @@ class Hippocampus:
         an append log. Like how your self-concept updates as a whole, not
         by appending new facts to old ones.
         """
+
+        existing_entries = [
+            item.text
+            for item in self.get_identities()
+        ]
+
+        for fact in entries:
+            if isinstance(fact, str) and fact not in existing_entries:
+                # Check if this updates an existing fact (same key prefix)
+                key = fact.split(":")[0].strip().lower() if ":" in fact else ""
+                if key:
+                    existing_entries = [
+                        e
+                        for e in existing_entries
+                        if not e.lower().startswith(key + ":")
+                    ]
+                existing_entries.append(fact)
+
+        self.save_identities([
+            Engram(text)
+            for text in existing_entries
+        ])
+
+    def save_identities(self, entries: list[Engram]) -> None:
         self._dir.mkdir(parents=True, exist_ok=True)
-        content = "# Profile\n" + "\n".join(f"- {e}" for e in entries) + "\n"
+        content = "# Profile\n" + "\n".join(f"- {e.text}" for e in entries) + "\n"
         self._encode_with_lock(self._profile_path, content, mode="write")
 
 

@@ -88,7 +88,7 @@ class MemoryManage:
             "help":        self.help,
             "rules":       self.rules,
             "lessons":     self.lessons,
-            "profile":     self.profile,
+            "identity":     self.identity,
             "episodes":    self.episodes,
         }
 
@@ -131,7 +131,7 @@ class MemoryManage:
         c.print("  [bold dim]Inspect[/]")
         c.print("  [bold]/memory rules [global|project][/]                 — show behavioral rules")
         c.print("  [bold]/memory lessons [global|project][/]               — show learned lessons")
-        c.print("  [bold]/memory profile [global|project][/]               — show identity profile")
+        c.print("  [bold]/memory identity [global|project][/]               — show identity profile")
         c.print("  [bold]/memory episodes [query][/]                       — search episodic logs")
         c.print()
         c.print("  [bold dim]Edit[/]")
@@ -149,6 +149,8 @@ class MemoryManage:
     # ------------------------------------------------------------------
     # Inspect
     # ------------------------------------------------------------------
+
+    # async def _handle_menu_command(self, name, ):
 
     async def rules(self, action: str = None, num: str = None) -> None:
         """Display stored rules, numbered for easy reference."""
@@ -255,11 +257,57 @@ class MemoryManage:
         self.console.print(f" /memory lessons edit <n> to update record")
 
 
-    def profile(self, scope: str = "both") -> None:
+    async def identity(self, action: str = None, num: str = None) -> None:
         """Display the identity profile, numbered for easy reference."""
+        global_items = dict(enumerate(self.cortex.global_hc.get_identities(), start=1))
+        project_items = dict(enumerate(self.cortex.project_hc.get_identities(), start=len(global_items) + 1))
 
-        for label, hc in self._pick_hc(scope):
-            self._print_entries(f"{label} — Profile", hc.recall_lessons(token_budget=None) or "")
+        index = {
+            **global_items,
+            **project_items,
+        }
+
+        if action is not None:
+            nums = list(index.keys())
+
+            if num is None:
+                return self.console.print(f"Choose item to {action}: {min(nums)}-{max(nums)}")
+
+            if num.isdigit():
+                num = int(num)
+            if num not in index:
+                return self.console.print(f"Item {num} not found, choose number between {min(nums)} and {max(nums)}")
+
+            if action == 'delete':
+                if num in global_items:
+                    return self.cortex.global_hc.del_identity(global_items[num].id)
+                else:
+                    return self.cortex.project_hc.del_identity(project_items[num].id)
+
+            elif action == 'edit':
+                text = await prompt_or_cancel("Edit the text>", default_text=index[num].text)
+
+                if text is None:
+                    return
+
+                if num in global_items:
+                    return self.cortex.global_hc.update_identity(global_items[num].id, text)
+                else:
+                    return self.cortex.project_hc.update_identity(project_items[num].id, text)
+
+            return self.console.print(f"Unknown action use one of: delete, edit")
+
+        for scope_title, items in [("Global", global_items), ("Project", project_items)]:
+            if not items:
+                continue
+            self._print_title(scope_title)
+            for i, item in items.items():
+                self._print_numbered_item(i, item)
+
+        self.console.print(f"Actions:")
+        self.console.print(f" /memory identity delete <n> to delete record")
+        self.console.print(f" /memory identity edit <n> to update record")
+
 
     def episodes(self, query: str = "") -> None:
         """Search and display episodic memory logs."""
@@ -399,7 +447,7 @@ class MemoryManage:
 
     def _info_scope(self, label: str, hc) -> int:
         console = self.console
-        identity = hc.recall_identity()
+        identities = [entry.text for entry in hc.get_identities()]
         rule_count = len(hc.get_rules())
         lessons = hc.get_lessons()
         topics = {
@@ -409,19 +457,11 @@ class MemoryManage:
         }
 
         console.print(f"  [anton.cyan]{label}[/] [dim]({hc._dir})[/]")
-        if identity:
-            entries = [
-                ln.strip()[2:]
-                for ln in identity.splitlines()
-                if ln.strip().startswith("- ")
-            ]
-            if entries:
-                console.print(
-                    f"    Identity:  {', '.join(entries[:3])}"
-                    + (" ..." if len(entries) > 3 else "")
-                )
-            else:
-                console.print("    Identity:  [dim](set)[/]")
+        if identities:
+            console.print(
+                f"    Identity:  {', '.join(identities[:3])}"
+                + (" ..." if len(identities) > 3 else "")
+            )
         else:
             console.print("    Identity:  [dim](empty)[/]")
         console.print(f"    Rules:     {rule_count}")
