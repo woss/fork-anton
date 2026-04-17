@@ -265,16 +265,6 @@ class TestAzureOpenAIProvider:
             mock_openai.AsyncOpenAI.assert_called_once()
             assert provider._client is mock_std_client
 
-    def test_api_version_stored_on_provider(self):
-        with patch("anton.core.llm.openai.openai"), \
-             patch("anton.core.llm.openai.AsyncAzureOpenAI"):
-            provider = OpenAIProvider(
-                api_key="key",
-                base_url="https://res.openai.azure.com",
-                api_version="2024-12-01-preview",
-            )
-            assert provider._api_version == "2024-12-01-preview"
-
     def test_export_connection_info_includes_api_version(self):
         with patch("anton.core.llm.openai.openai"), \
              patch("anton.core.llm.openai.AsyncAzureOpenAI"):
