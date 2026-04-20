@@ -175,12 +175,11 @@ class MemoryManage:
         if action not in methods.keys():
             return self.console.print(f"Unknown action use one of: {','.join(methods.keys())}")
 
+        id = index[num].id
         if num in global_items:
             method = getattr(self.cortex.global_hc, methods[action])
-            id = global_items[num].id
         else:
             method = getattr(self.cortex.project_hc, methods[action])
-            id = project_items[num].id
 
         if action == 'delete':
             method(id)
