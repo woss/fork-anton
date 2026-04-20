@@ -90,6 +90,7 @@ class MemoryManage:
             "lessons":     self.lessons,
             "identity":     self.identity,
             "episodes":    self.episodes,
+            "vacuum": self.vacuum
         }
 
     # ------------------------------------------------------------------
@@ -309,8 +310,17 @@ class MemoryManage:
         self.console.print(f"Actions:")
         self.console.print(f" /memory episodes delete <n> to delete record")
 
-    async def prune(self):
-        ...
+    async def vacuum(self):
+        toggle = await prompt_or_cancel(
+            "(anton) Are you sure to vacuum memory?", choices=["y", "n"], default="n"
+        )
+        if toggle == "y":
+            await self.cortex.vacuum()
+            self.console.print(f"Vacuum finished")
+        else:
+            self.console.print(f"Canceled")
+
+
 
     # ------------------------------------------------------------------
     # Dashboard
