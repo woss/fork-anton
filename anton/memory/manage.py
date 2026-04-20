@@ -199,8 +199,9 @@ class MemoryManage:
                 'delete': 'del_rule',
                 'edit': 'update_rule',
             })
-            if not updated:
-                return
+            if updated:
+                return await self.rules()
+            return
 
         for scope_title, items in [("Global", global_items), ("Project", project_items)]:
             if not items:
@@ -227,8 +228,9 @@ class MemoryManage:
                 'delete': 'del_lesson',
                 'edit': 'update_lesson',
             })
-            if not updated:
-                return
+            if updated:
+                return await self.lessons()
+            return
 
         for scope_title, items in [("Global", global_items), ("Project", project_items)]:
             if not items:
@@ -252,8 +254,9 @@ class MemoryManage:
                 'delete': 'del_identity',
                 'edit': 'update_identity',
             })
-            if not updated:
-                return
+            if updated:
+                return await self.identity()
+            return
 
         for scope_title, items in [("Global", global_items), ("Project", project_items)]:
             if not items:
@@ -266,97 +269,48 @@ class MemoryManage:
         self.console.print(f" /memory identity delete <n> to delete record")
         self.console.print(f" /memory identity edit <n> to update record")
 
-
-    def episodes(self, query: str = "") -> None:
-        """Search and display episodic memory logs."""
+    async def episodes(self, action: str = None, num: str = None) -> None:
         if self.episodic is None:
             self.console.print("[anton.warning]Episodic memory not initialized.[/]")
             return
-        q = query.strip() or "*"
-        formatted = self.episodic.recall_formatted(q, max_results=20)
-        self.console.print()
-        self.console.print(f"[anton.cyan]Episodes[/] [dim](query: {q!r})[/]")
-        self.console.print()
-        if formatted:
-            self.console.print(formatted)
-        else:
-            self.console.print("  [dim](no episodes found)[/]")
-        self.console.print()
 
-    # ------------------------------------------------------------------
-    # Edit / Delete
-    # ------------------------------------------------------------------
+        items = dict(enumerate(self.episodic.get_episodes(), start=1))
 
-    # def edit(self, args: list[str]) -> None:
-    #     """Open a memory file in $EDITOR."""
-    #     if self.cortex is None:
-    #         self.console.print("[anton.warning]Memory system not initialized.[/]")
-    #         return
-    #
-    #     kind = args[0] if args else None
-    #     scope = _parse_scope(args, 1)
-    #     if scope == "both":
-    #         scope = "project"
-    #
-    #     file_map = {"rules": "rules.md", "lessons": "lessons.md", "profile": "profile.md"}
-    #     if kind not in file_map:
-    #         self.console.print(
-    #             f"[anton.warning]Unknown kind {kind!r}. Use: rules, lessons, profile[/]"
-    #         )
-    #         return
-    #
-    #     _, hc = self._pick_hc(scope)[0]
-    #     path: Path = hc._dir / file_map[kind]
-    #     path.touch()
-    #
-    #     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "nano"
-    #     self.console.print(f"[dim]Opening {path} in {editor}…[/]")
-    #     subprocess.call([editor, str(path)])
+        if action is not None:
+            nums = list(items.keys())
 
-    # def delete(self, args: list[str]) -> None:
-    #     """Delete a specific numbered entry from a memory file.
-    #
-    #     Usage: delete rule|lesson|profile <n> [global|project]
-    #     """
-    #     if self.cortex is None:
-    #         self.console.print("[anton.warning]Memory system not initialized.[/]")
-    #         return
-    #
-    #     if len(args) < 2:
-    #         self.console.print(
-    #             "[anton.warning]Usage: /memory delete rule|lesson|profile <n> [global|project][/]"
-    #         )
-    #         return
-    #
-    #     kind = args[0]
-    #     try:
-    #         n = int(args[1])
-    #     except ValueError:
-    #         self.console.print(
-    #             f"[anton.warning]Entry number must be an integer, got {args[1]!r}[/]"
-    #         )
-    #         return
-    #
-    #     scope = _parse_scope(args, 2)
-    #     if scope == "both":
-    #         scope = "project"
-    #
-    #     file_map = {"rule": "rules.md", "lesson": "lessons.md", "profile": "profile.md"}
-    #     if kind not in file_map:
-    #         self.console.print(
-    #             f"[anton.warning]Unknown kind {kind!r}. Use: rule, lesson, profile[/]"
-    #         )
-    #         return
-    #
-    #     _, hc = self._pick_hc(scope)[0]
-    #     path: Path = hc._dir / file_map[kind]
-    #
-    #     if _delete_bullet(path, n):
-    #         self.console.print(f"  Deleted {kind} #{n} from {scope} memory.")
-    #     else:
-    #         self.console.print(
-    #             f"[anton.warning]Entry #{n} not found in {scope} {kind}s.[/]"
-    #         )
+            if num is None:
+                return self.console.print(f"Choose item to {action}: {min(nums)}-{max(nums)}")
+
+            if num.isdigit():
+                num = int(num)
+            if num not in items:
+                return self.console.print(f"Item {num} not found, choose number between {min(nums)} and {max(nums)}")
+
+            if action == 'delete':
+                session_id = items[num].session
+                self.episodic.del_episode(session_id)
+                self.console.print("[anton.cyan]Deleted[/]")
+                return await self.episodes()
+            else:
+                return self.console.print(f"Unknown action: {action}")
+
+        self._print_title("Episodic Memory")
+        max_shown_items = 50
+        if len(items) > max_shown_items:
+            items = items[-max_shown_items:]
+            self.console.print(f"Only the last {max_shown_items} are shown:")
+        for i, item in items.items():
+            content = item.content.replace('\n', ' ')
+            if len(content) > 100:
+                content = content[:97] + "..."
+            self.console.print(f"    [dim]{i:>3}.[/]  {content}")
+
+        self.console.print(f"Actions:")
+        self.console.print(f" /memory episodes delete <n> to delete record")
+
+    async def prune(self):
+        ...
 
     # ------------------------------------------------------------------
     # Dashboard
@@ -431,14 +385,6 @@ class MemoryManage:
         console.print()
         return rule_count + len(lessons)
 
-    def _pick_hc(self, scope: str) -> list[tuple[str, object]]:
-        """Return [(label, hc)] for the given scope string."""
-        if scope == "global":
-            return [("Global", self.cortex.global_hc)]
-        if scope == "project":
-            return [("Project", self.cortex.project_hc)]
-        return [("Global", self.cortex.global_hc), ("Project", self.cortex.project_hc)]
-
     def _print_title(self, title: str) -> None:
         c = self.console
         c.print()
@@ -456,27 +402,6 @@ class MemoryManage:
             meta_parts.append(f"updated:{ua.strftime('%Y-%m-%d')}")
         if meta_parts:
             self.console.print(f"         [anton.cyan]{' '.join(meta_parts)}[/]")
-
-    def _print_entries(self, title: str, raw: str) -> None:
-        """Print numbered bullet entries under a heading, grouped by markdown section."""
-        c = self.console
-        c.print()
-        c.print(f"[anton.cyan]{title}[/]")
-        c.print()
-        entries = _numbered_bullets(raw)
-        if not entries:
-            c.print("  [dim](empty)[/]")
-        else:
-            current_section: str | None = None
-            for n, section, text in entries:
-                if section != current_section:
-                    if section:
-                        c.print(f"  [bold]{section}[/]")
-                    current_section = section
-                c.print(f"    [dim]{n:>3}.[/]  {text}")
-        c.print()
-
-
 
 
 async def handle_setup_memory(
