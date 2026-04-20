@@ -297,6 +297,8 @@ class Hippocampus:
 
             lines.append(f"- {entry.text} <!-- {' '.join(parts)} -->\n")
 
+        if len(lines) == 0:
+            return ""
         return f"# {header}\n" + "".join(lines)
 
     def recall_topic(self, slug: str) -> str:
