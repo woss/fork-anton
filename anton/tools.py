@@ -62,10 +62,30 @@ async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str
                 _conn_name = _registry.derive_name(_engine_def, known_variables)
                 if not _conn_name:
                     _conn_name = str(int(time.time()) % 100000)
-                _slug = save_connection(vault, _engine_def, _conn_name, _fields_to_save)
+                # Merge with any existing connection to avoid silently dropping
+                # previously saved fields (including secrets). The YOLO subset
+                # may be narrower than what's stored; preserve what isn't being
+                # explicitly replaced.
+                _existing = vault.load(_engine_def.engine, _conn_name) or {}
+                _merged = {**_existing, **_fields_to_save}
+                _preserved = [k for k in _existing if k not in _fields_to_save]
+                _slug = save_connection(vault, _engine_def, _conn_name, _merged)
                 if _settings:
                     from anton.analytics import send_event
                     send_event(_settings, "ds_connect_success", engine=engine)
+                if _existing:
+                    _msg = (
+                        f"Updated connection `{_slug}` in vault. "
+                        f"Fields set/updated: {', '.join(_fields_to_save.keys())}."
+                    )
+                    if _preserved:
+                        _msg += f" Preserved existing fields: {', '.join(_preserved)}."
+                    _msg += (
+                        " Future turns can reference this connection by its slug. "
+                        "Access credentials via DS_<FIELD> environment variables "
+                        "in scratchpad code — never embed raw values."
+                    )
+                    return _msg
                 return (
                     f"Saved connection `{_slug}` to vault with fields: "
                     f"{', '.join(_fields_to_save.keys())}. "

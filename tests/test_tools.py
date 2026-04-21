@@ -96,6 +96,66 @@ class TestNonInteractiveSave:
         assert result.startswith("Saved connection")
 
     @pytest.mark.asyncio
+    async def test_existing_connection_subset_preserves_stored_fields(self, vault_dir):
+        """YOLO subset overlapping an existing connection must merge, not replace."""
+        session = _make_session(vault_dir)
+        vault = session._data_vault
+        vault.save(
+            "postgres",
+            "sales",
+            {
+                "host": "old.example.com",
+                "database": "sales",
+                "user": "admin",
+                "password": "super-secret",
+                "port": "5432",
+            },
+        )
+
+        result = await handle_connect_datasource(
+            session,
+            {
+                "engine": "postgres",
+                "known_variables": {
+                    "host": "new.example.com",
+                    "database": "sales",
+                },
+            },
+        )
+
+        saved = vault.load("postgres", "sales")
+        assert saved is not None
+        assert saved["host"] == "new.example.com"
+        assert saved["database"] == "sales"
+        assert saved["user"] == "admin"
+        assert saved["password"] == "super-secret"
+        assert saved["port"] == "5432"
+        assert result.startswith("Updated connection")
+        assert "password" in result
+
+    @pytest.mark.asyncio
+    async def test_new_connection_still_saves_successfully(self, vault_dir):
+        """When no prior connection exists, the happy path still reports Saved."""
+        session = _make_session(vault_dir)
+        result = await handle_connect_datasource(
+            session,
+            {
+                "engine": "postgres",
+                "known_variables": {
+                    "host": "db.example.com",
+                    "database": "analytics",
+                    "user": "admin",
+                    "password": "x",
+                },
+            },
+        )
+        saved = session._data_vault.load("postgres", "analytics")
+        assert saved is not None
+        assert saved["host"] == "db.example.com"
+        assert result.startswith("Saved connection")
+        assert "Updated connection" not in result
+
+    @pytest.mark.asyncio
     async def test_unknown_engine_falls_through_to_interactive(self, vault_dir):
         """Engine not in registry → non-interactive branch is skipped, interactive called."""
         session = _make_session(vault_dir)
