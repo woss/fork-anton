@@ -783,7 +783,7 @@ class ChatSession:
         self._turn_count += 1
         self._persist_history()
         if self._cortex is not None and self._cortex.mode != "off":
-            self._identity_buffer.append(user_input)
+            self._identity_buffer.append(user_msg_str)
             if self._turn_count % 5 == 0:
                 buffered = "\n\n".join(self._identity_buffer)
                 self._identity_buffer.clear()
