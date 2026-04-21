@@ -38,6 +38,42 @@ async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str
         from anton.analytics import send_event
         send_event(_settings, "ds_connect_attempt", engine=engine)
 
+    from anton.core.datasources.data_vault import LocalDataVault
+    vault = session._data_vault or LocalDataVault()
+
+    # ── Non-interactive path ─────────────────────────────────────────
+    # When the LLM extracts credentials from the conversation, save them
+    # directly without running the interactive prompt loop.
+    # Three guards: (1) known_variables present, (2) engine is a known
+    # built-in (find_by_name returns non-None), (3) at least one key
+    # overlaps with the engine's declared fields.
+    if known_variables:
+        import time
+        from anton.core.datasources.datasource_registry import DatasourceRegistry
+        from anton.utils.datasources import save_connection
+        _registry = DatasourceRegistry()
+        _engine_def = _registry.find_by_name(engine)
+        if _engine_def is not None:
+            _all_fields = {f.name for f in _engine_def.fields}
+            for _am in _engine_def.auth_methods or []:
+                _all_fields.update(f.name for f in _am.fields)
+            _fields_to_save = {k: v for k, v in known_variables.items() if k in _all_fields}
+            if _fields_to_save:
+                _conn_name = _registry.derive_name(_engine_def, known_variables)
+                if not _conn_name:
+                    _conn_name = str(int(time.time()) % 100000)
+                _slug = save_connection(vault, _engine_def, _conn_name, _fields_to_save)
+                if _settings:
+                    from anton.analytics import send_event
+                    send_event(_settings, "ds_connect_success", engine=engine)
+                return (
+                    f"Saved connection `{_slug}` to vault with fields: "
+                    f"{', '.join(_fields_to_save.keys())}. "
+                    f"Future turns can reference this connection by its slug. "
+                    f"Access credentials via DS_<FIELD> environment variables "
+                    f"in scratchpad code — never embed raw values."
+                )
+
     console.print()
     console.print(
         f"[anton.prompt]anton>[/] I can help with that \u2014 let's connect [bold]{engine}[/] to Anton."
@@ -45,8 +81,6 @@ async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str
 
     from anton.commands.datasource import handle_connect_datasource
 
-    from anton.core.datasources.data_vault import LocalDataVault
-    vault = session._data_vault or LocalDataVault()
     before = {f"{c['engine']}-{c['name']}" for c in vault.list_connections()}
 
     # Clear any stale status from a previous run
@@ -146,15 +180,23 @@ async def handle_connect_datasource(session: ChatSession, tc_input: dict) -> str
 CONNECT_DATASOURCE_TOOL = ToolDef(
     name = "connect_new_datasource",
     description = (
-        "Connect a new data source to Anton's Local Vault. Call this when the user "
-        "asks a question that requires data from a source that isn't connected yet "
-        "(e.g. email, database, CRM, API). This starts an interactive connection flow "
-        "where the user enters their credentials.\n\n"
-        "Pass the datasource type/name (e.g. 'gmail', 'postgres', 'salesforce', 'hubspot'). "
-        "Anton will match it to the right connector and guide the user through setup.\n\n"
-        "If the user has ALREADY mentioned credential values in the conversation "
-        "(e.g. 'connect to dynamodb, my access key is AKIA... and region is us-east-1'), "
-        "pass them as `known_variables` so the user is not asked again.\n\n"
+        "Connect a data source to Anton's Local Vault. Two modes:\n\n"
+        "(a) Non-interactive: call this tool IMMEDIATELY when the user shares "
+        "credentials in chat (host, password, API token, service account JSON, "
+        "etc.). Pass all extracted values as known_variables. The tool saves "
+        "to the vault without any prompts and returns a confirmation. This "
+        "ensures credentials are persisted before being used anywhere — never "
+        "reference chat-supplied credentials directly in scratchpad code; always "
+        "go through the vault.\n\n"
+        "(b) Interactive: call with just engine and no known_variables when the "
+        "user has no credentials in context yet. Anton runs the same flow as "
+        "/connect, prompting for fields one at a time.\n\n"
+        "Supported engines: see the built-in registry (PostgreSQL, MySQL, Snowflake, "
+        "BigQuery, Redshift, Databricks, MariaDB, MSSQL, Oracle, HubSpot, Salesforce, "
+        "Shopify, Gmail, and more). Unknown engines fall through to the interactive "
+        "custom datasource flow.\n\n"
+        "Partial credentials are fine — save what the user provided. Ask for missing "
+        "pieces in a later turn only if needed. Never invent values.\n\n"
         "Do NOT print any message before calling this tool — it handles the user-facing output."
     ),
     input_schema = {
