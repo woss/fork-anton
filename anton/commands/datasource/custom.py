@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
+from anton.connect_collector import extract_variables
+from anton.commands.datasource.helpers import show_credential_help
 from anton.core.datasources.datasource_registry import DatasourceEngine, DatasourceField
 from anton.utils.datasources import remove_engine_block
 from anton.utils.prompt import prompt_or_cancel
@@ -210,18 +212,68 @@ async def handle_add_custom_datasource(
     console.print("        [anton.muted]Fields:[/] " + ", ".join(summary_parts))
     console.print()
 
-    # Ask only for values we don't have yet — all optional, Enter to skip.
-    for f, raw in zip(fields, spec.fields):
-        if f.name in credentials:
-            continue
+    # Sequential collection — one field at a time, consistent with the
+    # built-in connect flow. Enter skips the current field; 'skip' stops
+    # collection; 'help' shows credential guidance; structured input with
+    # multiple values is parsed via LLM extraction.
+    fields_by_name = {f.name: f for f in fields}
+    slug_hint = re.sub(r"[^\w]", "_", display_name.lower()).strip("_")
+    known_engine_slugs = [e.engine for e in registry.all_engines()]
+    skipped: set[str] = set()
+
+    def _label_for(f: DatasourceField) -> str:
+        return (f.description or "").strip() or f.name
+
+    def _looks_structured(text: str) -> bool:
+        return "=" in text or "://" in text or "\n" in text
+
+    while True:
+        remaining = [
+            f for f in fields
+            if f.name not in credentials and f.name not in skipped
+        ]
+        if not remaining:
+            break
+        current = remaining[0]
         value = await prompt_or_cancel(
-            f"(anton) {f.name} (optional)",
-            password=f.secret,
+            f"(anton) {_label_for(current)}",
+            password=current.secret,
         )
         if value is None:
             return None
-        if value:
-            credentials[f.name] = value
+        stripped = value.strip()
+        if not stripped:
+            skipped.add(current.name)
+            continue
+        lowered = stripped.lower()
+        if lowered == "skip":
+            break
+        if lowered == "help":
+            await show_credential_help(
+                console, session, display_name, current, fields,
+            )
+            continue
+        if len(remaining) > 1 and _looks_structured(stripped):
+            extracted = await extract_variables(
+                stripped,
+                expected_fields=fields,
+                current_engine=slug_hint,
+                current_engine_display=display_name,
+                known_engine_slugs=known_engine_slugs,
+                session=session,
+            )
+            if extracted.variables:
+                filled_here: list[str] = []
+                for k, val in extracted.variables.items():
+                    if k in fields_by_name and val:
+                        credentials[k] = val
+                        filled_here.append(k)
+                if filled_here:
+                    console.print(
+                        f"[anton.muted]        Got: {', '.join(filled_here)}[/]"
+                    )
+                    continue
+        credentials[current.name] = stripped
 
     # Build engine slug and write definition to ~/.anton/datasources.md
     slug = re.sub(r"[^\w]", "_", display_name.lower()).strip("_")
