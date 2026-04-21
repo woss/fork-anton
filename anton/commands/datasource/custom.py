@@ -104,6 +104,112 @@ class _CustomDatasourceSpec(BaseModel):
     )
 
 
+async def collect_custom_credentials(
+    console: "Console",
+    session: "ChatSession",
+    registry: "DatasourceRegistry",
+    display_name: str,
+    fields: list[DatasourceField],
+    credentials: dict[str, str],
+    *,
+    edit_existing: bool = False,
+) -> bool:
+    """Collect or edit custom datasource credentials sequentially."""
+    fields_by_name = {f.name: f for f in fields}
+    slug_hint = re.sub(r"[^\w]", "_", display_name.lower()).strip("_")
+    known_engine_slugs = [e.engine for e in registry.all_engines()]
+    skipped: set[str] = set()
+
+    def _label_for(f: DatasourceField) -> str:
+        return (f.description or "").strip() or f.name
+
+    def _looks_structured(text: str) -> bool:
+        return "=" in text or "://" in text or "\n" in text
+
+    if edit_existing:
+        for current in fields:
+            while True:
+                current_value = credentials.get(current.name, "")
+                label = f"(anton) {_label_for(current)}"
+                if current.secret and current_value:
+                    label = f"{label} [••••••••]"
+                    value = await prompt_or_cancel(label, password=True)
+                elif current_value:
+                    value = await prompt_or_cancel(label, default=current_value)
+                else:
+                    value = await prompt_or_cancel(label, password=current.secret)
+
+                if value is None:
+                    return False
+
+                stripped = value.strip()
+                if not stripped:
+                    break
+
+                lowered = stripped.lower()
+                if lowered == "skip":
+                    return True
+                if lowered == "help":
+                    await show_credential_help(
+                        console, session, display_name, current, fields,
+                    )
+                    continue
+
+                credentials[current.name] = stripped
+                break
+        return True
+
+    while True:
+        remaining = [
+            f for f in fields
+            if f.name not in credentials and f.name not in skipped
+        ]
+        if not remaining:
+            break
+        current = remaining[0]
+        value = await prompt_or_cancel(
+            f"(anton) {_label_for(current)}",
+            password=current.secret,
+        )
+        if value is None:
+            return False
+        stripped = value.strip()
+        if not stripped:
+            skipped.add(current.name)
+            continue
+        lowered = stripped.lower()
+        if lowered == "skip":
+            break
+        if lowered == "help":
+            await show_credential_help(
+                console, session, display_name, current, fields,
+            )
+            continue
+        if len(remaining) > 1 and _looks_structured(stripped):
+            extracted = await extract_variables(
+                stripped,
+                expected_fields=fields,
+                current_engine=slug_hint,
+                current_engine_display=display_name,
+                known_engine_slugs=known_engine_slugs,
+                session=session,
+            )
+            if extracted.variables:
+                filled_here: list[str] = []
+                for k, val in extracted.variables.items():
+                    if k in fields_by_name and val:
+                        credentials[k] = val
+                        filled_here.append(k)
+                if filled_here:
+                    console.print(
+                        f"[anton.muted]        Got: {', '.join(filled_here)}[/]"
+                    )
+                    continue
+        credentials[current.name] = stripped
+
+    return True
+
+
 async def handle_add_custom_datasource(
     console: "Console",
     name: str,
@@ -216,64 +322,15 @@ async def handle_add_custom_datasource(
     # built-in connect flow. Enter skips the current field; 'skip' stops
     # collection; 'help' shows credential guidance; structured input with
     # multiple values is parsed via LLM extraction.
-    fields_by_name = {f.name: f for f in fields}
-    slug_hint = re.sub(r"[^\w]", "_", display_name.lower()).strip("_")
-    known_engine_slugs = [e.engine for e in registry.all_engines()]
-    skipped: set[str] = set()
-
-    def _label_for(f: DatasourceField) -> str:
-        return (f.description or "").strip() or f.name
-
-    def _looks_structured(text: str) -> bool:
-        return "=" in text or "://" in text or "\n" in text
-
-    while True:
-        remaining = [
-            f for f in fields
-            if f.name not in credentials and f.name not in skipped
-        ]
-        if not remaining:
-            break
-        current = remaining[0]
-        value = await prompt_or_cancel(
-            f"(anton) {_label_for(current)}",
-            password=current.secret,
-        )
-        if value is None:
-            return None
-        stripped = value.strip()
-        if not stripped:
-            skipped.add(current.name)
-            continue
-        lowered = stripped.lower()
-        if lowered == "skip":
-            break
-        if lowered == "help":
-            await show_credential_help(
-                console, session, display_name, current, fields,
-            )
-            continue
-        if len(remaining) > 1 and _looks_structured(stripped):
-            extracted = await extract_variables(
-                stripped,
-                expected_fields=fields,
-                current_engine=slug_hint,
-                current_engine_display=display_name,
-                known_engine_slugs=known_engine_slugs,
-                session=session,
-            )
-            if extracted.variables:
-                filled_here: list[str] = []
-                for k, val in extracted.variables.items():
-                    if k in fields_by_name and val:
-                        credentials[k] = val
-                        filled_here.append(k)
-                if filled_here:
-                    console.print(
-                        f"[anton.muted]        Got: {', '.join(filled_here)}[/]"
-                    )
-                    continue
-        credentials[current.name] = stripped
+    if not await collect_custom_credentials(
+        console,
+        session,
+        registry,
+        display_name,
+        fields,
+        credentials,
+    ):
+        return None
 
     # Build engine slug and write definition to ~/.anton/datasources.md
     slug = re.sub(r"[^\w]", "_", display_name.lower()).strip("_")

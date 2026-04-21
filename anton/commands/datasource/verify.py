@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Awaitable, Callable
 
 from anton.core.datasources.data_vault import DataVault, LocalDataVault
 from anton.core.datasources.datasource_registry import DatasourceEngine, DatasourceField, DatasourceRegistry
@@ -23,6 +23,7 @@ async def run_connection_test(
     engine_def: "DatasourceEngine",
     credentials: dict[str, str],
     retry_fields: "list[DatasourceField]",
+    retry_edit_callback: "Callable[[], Awaitable[bool]] | None" = None,
 ) -> bool:
     """Inject flat DS_* vars, run engine_def.test_snippet, restore env.
 
@@ -81,6 +82,10 @@ async def run_connection_test(
             if retry is None or retry.strip().lower() != "y":
                 return False
             console.print()
+            if retry_edit_callback is not None:
+                if not await retry_edit_callback():
+                    return False
+                continue
             for f in retry_fields:
                 if not f.secret:
                     continue

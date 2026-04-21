@@ -12,7 +12,7 @@ from anton.core.datasources.datasource_registry import DatasourceRegistry
 from anton.utils.datasources import parse_connection_slug, register_secret_vars, restore_namespaced_env, save_connection
 from anton.utils.prompt import prompt_or_cancel
 from anton.commands.datasource.helpers import show_credential_help
-from anton.commands.datasource.custom import handle_add_custom_datasource
+from anton.commands.datasource.custom import collect_custom_credentials, handle_add_custom_datasource
 from anton.commands.datasource.verify import run_connection_test
 
 _PROMPT_RECONNECT_CANCEL = "(reconnect/cancel)"
@@ -293,8 +293,26 @@ async def handle_connect_datasource(
             return session
         engine_def, credentials = result
         if engine_def.test_snippet:
+            async def _retry_custom_credentials() -> bool:
+                console.print("[anton.muted]        Let's update those details.[/]")
+                return await collect_custom_credentials(
+                    console,
+                    session,
+                    registry,
+                    engine_def.display_name,
+                    engine_def.fields,
+                    credentials,
+                    edit_existing=True,
+                )
+
             if not await run_connection_test(
-                console, scratchpads, vault, engine_def, credentials, engine_def.fields
+                console,
+                scratchpads,
+                vault,
+                engine_def,
+                credentials,
+                engine_def.fields,
+                retry_edit_callback=_retry_custom_credentials,
             ):
                 _telemetry("ds_connect_failed", engine=engine_def.engine)
                 return session
@@ -387,18 +405,17 @@ async def handle_connect_datasource(
         console.print()
 
     while not collector.is_complete:
-        collector.format_status(console)
-        console.print()
-
         next_field = collector.next_field
-        only_one_required = (
+        remaining_count = len(collector.missing_required)
+        use_sequential = (
             next_field is not None
             and next_field.required
-            and len(collector.missing_required) == 1
+            and remaining_count != 2
         )
 
-        if only_one_required and next_field is not None:
-            label = f"(anton) {next_field.name}"
+        if use_sequential and next_field is not None:
+            pretty = next_field.name.replace("_", " ").title()
+            label = f"(anton) {pretty}"
             if next_field.secret:
                 value = await prompt_or_cancel(label, password=True)
             elif next_field.default:
@@ -410,13 +427,50 @@ async def handle_connect_datasource(
             if not value:
                 partial = True
                 break
-            if value.strip().lower() == "help":
+            stripped = value.strip()
+            lowered = stripped.lower()
+            if lowered == "skip":
+                partial = True
+                break
+            if lowered == "help":
                 await show_credential_help(
                     console, session, engine_def.display_name, next_field, active_fields,
                 )
                 continue
+            if remaining_count > 1 and (
+                "=" in stripped or "://" in stripped or "\n" in stripped
+            ):
+                extracted = await extract_variables(
+                    stripped,
+                    expected_fields=collector.active_fields,
+                    current_engine=engine_def.engine,
+                    current_engine_display=engine_def.display_name,
+                    known_engine_slugs=known_engine_slugs,
+                    session=session,
+                )
+                if extracted.is_redirect:
+                    redirect_text = _build_redirect_message(
+                        collector, stripped, extracted.redirect_engine
+                    )
+                    session._pending_connect_redirect = redirect_text
+                    if not from_tool_call:
+                        session._history.append(
+                            {"role": "assistant", "content": redirect_text}
+                        )
+                    return session
+                if extracted.variables:
+                    filled = collector.fill_many(extracted.variables)
+                    if filled:
+                        console.print(
+                            f"[anton.muted]        Got: {', '.join(filled)}[/]"
+                        )
+                        console.print()
+                        continue
             collector.fill(next_field.name, value)
             continue
+
+        collector.format_status(console)
+        console.print()
 
         missing_names = ", ".join(f.name for f in collector.missing_required)
         prompt_label = f"(anton) {missing_names} (value, 'key=value …', 'help', or 'skip')"
