@@ -111,6 +111,19 @@ async def handle_add_custom_datasource(
             return None
         tool_name = tool_name.strip()
 
+    if tool_name and not tool_name.isdigit():
+        console.print()
+        console.print(
+            f"[anton.cyan](anton)[/] '{tool_name}' isn't a built-in connector — "
+            f"setting it up as a custom datasource."
+        )
+        console.print(
+            "  [anton.muted]Tell me how to connect: API base URL, auth method "
+            "(token, OAuth, basic auth), endpoints you care about. "
+            "Anton will figure out the integration from your description.[/]"
+        )
+        console.print()
+
     if known_service:
         user_answer = ""
         console.print("[anton.muted]        Working out the connection details…[/]")
@@ -119,7 +132,7 @@ async def handle_add_custom_datasource(
             f"(anton) How do you authenticate with {tool_name}? "
             "Describe what credentials you have (don't paste actual values)",
         )
-        if not user_answer or not user_answer.strip():
+        if user_answer is None:
             return None
         console.print()
         console.print("[anton.muted]    Got it — working out the connection details…[/]")

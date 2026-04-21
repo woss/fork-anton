@@ -1148,6 +1148,84 @@ class TestHandleConnectDatasource:
         assert saved["user"] == "alice"
         assert saved["password"] == "s3cr3t"
 
+    @pytest.mark.asyncio
+    async def test_non_registry_name_routes_to_custom_with_soft_message(
+        self, registry, vault_dir, make_session
+    ):
+        """Non-registry input routes to custom; soft entry message is printed;
+        empty description does not cancel the flow."""
+        session = make_session()
+        console = MagicMock()
+        vault = LocalDataVault(vault_dir=vault_dir)
+
+        # Empty description → flow should not exit (treat as skip, not cancel).
+        # LLM raises RuntimeError (default mock for unknown schemas) → custom
+        # flow aborts cleanly, nothing saved.
+        custom_calls = iter([""])
+
+        with (
+            patch(
+                "anton.commands.datasource.connect.LocalDataVault",
+                return_value=vault,
+            ),
+            patch(
+                "anton.commands.datasource.connect.DatasourceRegistry",
+                return_value=registry,
+            ),
+            patch(
+                "anton.commands.datasource.connect.prompt_or_cancel",
+                new=AsyncMock(return_value="GitHub"),
+            ),
+            patch(
+                "anton.commands.datasource.custom.prompt_or_cancel",
+                new=AsyncMock(side_effect=lambda *_: next(custom_calls)),
+            ),
+        ):
+            result = await handle_connect_datasource(
+                console, session._scratchpads, session
+            )
+
+        printed = " ".join(str(c) for c in console.print.call_args_list)
+        assert "GitHub" in printed
+        assert "built-in connector" in printed
+        assert vault.list_connections() == []
+        assert result is session
+
+    @pytest.mark.asyncio
+    async def test_cancel_at_description_prompt_exits_cleanly(
+        self, registry, vault_dir, make_session
+    ):
+        """Cancelling (None) at the description prompt in custom flow exits
+        without saving anything."""
+        session = make_session()
+        console = MagicMock()
+        vault = LocalDataVault(vault_dir=vault_dir)
+
+        with (
+            patch(
+                "anton.commands.datasource.connect.LocalDataVault",
+                return_value=vault,
+            ),
+            patch(
+                "anton.commands.datasource.connect.DatasourceRegistry",
+                return_value=registry,
+            ),
+            patch(
+                "anton.commands.datasource.connect.prompt_or_cancel",
+                new=AsyncMock(return_value="SomeUnknownService"),
+            ),
+            patch(
+                "anton.commands.datasource.custom.prompt_or_cancel",
+                new=AsyncMock(return_value=None),
+            ),
+        ):
+            result = await handle_connect_datasource(
+                console, session._scratchpads, session
+            )
+
+        assert vault.list_connections() == []
+        assert result is session
+
 
 class TestCredentialScrubbing:
     """_scrub_credentials and _register_secret_vars — flat and namespaced modes."""
@@ -2359,7 +2437,7 @@ class TestCustomDatasourceConnectFlow:
         )
 
         responses = iter(
-            ["0", "My API Service", "I have an API key", "n", "my_secret_key"]
+            ["My API Service", "I have an API key", "n", "my_secret_key"]
         )
 
         poc = AsyncMock(side_effect=lambda *a, **kw: next(responses))
@@ -2414,7 +2492,7 @@ class TestCustomDatasourceConnectFlow:
         )
 
         responses = iter(
-            ["0", "My API Service", "I have an API key", "n", "bad_key", "n"]
+            ["My API Service", "I have an API key", "n", "bad_key", "n"]
         )
 
         poc = AsyncMock(side_effect=lambda *a, **kw: next(responses))
@@ -2468,7 +2546,6 @@ class TestCustomDatasourceConnectFlow:
 
         responses = iter(
             [
-                "0",
                 "My API Service",
                 "I have an API key",
                 "n",
@@ -2528,7 +2605,7 @@ class TestCustomDatasourceConnectFlow:
             )
         )
 
-        responses = iter(["0", "My API Service", "I have an API key", "n", "my_key"])
+        responses = iter(["My API Service", "I have an API key", "n", "my_key"])
 
         poc = AsyncMock(side_effect=lambda *a, **kw: next(responses))
         with (

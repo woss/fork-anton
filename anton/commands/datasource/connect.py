@@ -245,129 +245,39 @@ async def handle_connect_datasource(
             )
         return session
 
-    console.print()
-    all_engines = registry.all_engines()
-    popular_engines = [e for e in all_engines if e.popular and not e.custom]
-    other_engines = [e for e in all_engines if not e.popular and not e.custom]
-    custom_engines = [e for e in all_engines if e.custom]
-    display_engines = popular_engines + other_engines + custom_engines
-
     saved_connections = vault.list_connections()
-    seen_engines: set[str] = set()
-    recent_engine_entries: list[tuple[str, str]] = []
-    for c in saved_connections:
-        if c["engine"] not in seen_engines:
-            seen_engines.add(c["engine"])
-            engine_obj = registry.get(c["engine"])
-            label = engine_obj.display_name if engine_obj else c["engine"]
-            recent_engine_entries.append((c["engine"], label))
-
-    def print_sections() -> None:
-        console.print(
-            "[anton.cyan](anton)[/] Select a data source to create a new connection:\n"
-        )
-        console.print("       [bold]  Primary")
-        console.print(
-            "         [bold]  0.[/bold] Custom datasource"
-            " (connect anything via API, SQL, or MCP)\n"
-        )
-        if popular_engines:
-            console.print("       [bold]  Most popular")
-            for i, e in enumerate(popular_engines, 1):
-                console.print(f"          [bold]{i:>2}.[/bold] {e.display_name}")
-            console.print()
-        if recent_engine_entries:
-            start = len(popular_engines) + 1
-            console.print("       [bold]  Recently used data sources")
-            for i, (_, label) in enumerate(recent_engine_entries, start):
-                console.print(f"          [bold]{i:>2}.[/bold] {label}")
-            console.print()
-
-    def print_all() -> None:
-        console.print(
-            "[anton.cyan](anton)[/] All data sources (★ = popular):\n"
-        )
-        console.print("       [bold]  Primary")
-        console.print(
-            "         [bold]  0.[/bold] Custom datasource"
-            " (connect anything via API, SQL, or MCP)\n"
-        )
-        for i, e in enumerate(display_engines, 1):
-            star = " ★" if e.popular else ""
-            console.print(f"          [bold]{i:>2}.[/bold] {e.display_name}{star}")
-        console.print()
-
-    async def get_create_new_answer() -> str | None:
-        print_sections()
-        console.print(
-            "       [anton.muted]Don't see yours? Type a datasource name (e.g., GitHub, Gmail, Jira, ...)\n"
-            "       It can be virtually any datasource — we'll figure out the details together.[/]"
-        )
-        console.print()
-        ans = await prompt_or_cancel(
-            "(anton) Enter a number or type a datasource name",
-        )
-        if ans is None:
-            return None
-        if ans.strip().lower() == "all":
-            console.print()
-            print_all()
-            ans = await prompt_or_cancel(
-                "(anton) Enter a number or type a name",
-            )
-        return ans
 
     if prefill:
-        answer = prefill
-    elif saved_connections:
-        console.print()
-        console.print("[anton.cyan](anton)[/] What would you like to do?\n")
-        console.print("          [bold]  1.[/bold] Use an existing connection")
-        console.print("          [bold]  2.[/bold] Create a new connection")
-        console.print()
-        top_choice = await prompt_or_cancel(
-            "(anton) Enter a number", choices=["1", "2"]
-        )
-        if top_choice is None:
-            return session
-
-        if top_choice == "1":
-            console.print()
-            console.print("[anton.cyan](anton)[/] Your saved connections:\n")
-            for i, c in enumerate(saved_connections, 1):
-                conn_slug = f"{c['engine']}-{c['name']}"
-                engine_obj = registry.get(c["engine"])
-                engine_label = engine_obj.display_name if engine_obj else c["engine"]
-                console.print(
-                    f"          [bold]{i:>2}.[/bold] {conn_slug}"
-                    f" [dim]— {engine_label}[/]"
-                )
-            console.print()
-            pick = await prompt_or_cancel(
-                "(anton) Enter a number",
-                choices=[str(i) for i in range(1, len(saved_connections) + 1)],
-            )
-            if pick is None:
-                return session
-            picked_conn = saved_connections[int(pick) - 1]
-            picked_slug = f"{picked_conn['engine']}-{picked_conn['name']}"
-            return await _reconnect_to_saved(
-                console, session, vault, registry, picked_slug, picked_conn,
-                from_tool_call=from_tool_call,
-            )
-
-        answer = await get_create_new_answer()
-        if answer is None:
+        stripped_answer = prefill.strip()
+        if not stripped_answer:
             return session
     else:
-        answer = await get_create_new_answer()
+        console.print()
+        console.print(
+            "[anton.cyan](anton)[/] What would you like to connect?"
+        )
+        console.print(
+            "  [anton.muted]Examples: PostgreSQL, MySQL, Snowflake, BigQuery, "
+            "Gmail, GitHub, HubSpot, Salesforce, Jira, REST API.[/]"
+        )
+        if saved_connections:
+            slugs = ", ".join(f"{c['engine']}-{c['name']}" for c in saved_connections[:5])
+            more = "" if len(saved_connections) <= 5 else f" (+{len(saved_connections) - 5} more, see /list)"
+            console.print(
+                f"  [anton.muted]To reconnect a saved one, type its slug: {slugs}{more}[/]"
+            )
+        console.print()
+
+        answer = await prompt_or_cancel("(anton) Connect to")
         if answer is None:
             return session
 
-    stripped_answer = answer.strip()
-    known_slugs = {
-        f"{c['engine']}-{c['name']}": c for c in vault.list_connections()
-    }
+        stripped_answer = answer.strip()
+        if not stripped_answer:
+            return session
+
+    # Priority 1: saved slug match → reconnect
+    known_slugs = {f"{c['engine']}-{c['name']}": c for c in saved_connections}
     if stripped_answer in known_slugs:
         conn = known_slugs[stripped_answer]
         return await _reconnect_to_saved(
@@ -375,117 +285,14 @@ async def handle_connect_datasource(
             from_tool_call=from_tool_call,
         )
 
-    engine_def = None
-    custom_source = False
-    llm_recognised = False
-    saved_start = len(popular_engines) + 1
-    max_num = len(popular_engines) + len(recent_engine_entries)
+    # Priority 2: registry match → field collection
+    engine_def = registry.find_by_name(stripped_answer)
 
-    if stripped_answer.isdigit() or (stripped_answer.lstrip("-").isdigit()):
-        pick_num = int(stripped_answer)
-        if pick_num == 0:
-            custom_source = True
-        elif 1 <= pick_num <= len(popular_engines):
-            engine_def = popular_engines[pick_num - 1]
-        elif recent_engine_entries and saved_start <= pick_num <= max_num:
-            picked_engine_slug, _ = recent_engine_entries[pick_num - saved_start]
-            engine_def = registry.get(picked_engine_slug)
-            if engine_def is None:
-                custom_source = True
-        else:
-            console.print(
-                f"[anton.warning](anton)[/] '{stripped_answer}' is out of range. "
-                f"Please enter 0\u2013{max_num}.[/]"
-            )
-            console.print()
-            return session
-
-    if engine_def is None and not custom_source:
-        engine_def = registry.find_by_name(stripped_answer)
-        if engine_def is None:
-            needle = stripped_answer.lower()
-            candidates = [
-                e
-                for e in all_engines
-                if needle in e.display_name.lower() or needle in e.engine.lower()
-            ]
-            if len(candidates) == 1:
-                engine_def = candidates[0]
-            elif len(candidates) > 1:
-                console.print()
-                console.print(
-                    f"[anton.warning](anton)[/] '{stripped_answer}' matches multiple engines — "
-                    "which one did you mean?"
-                )
-                console.print()
-                for i, e in enumerate(candidates, 1):
-                    console.print(f"        {i}. {e.display_name}")
-                console.print()
-                pick = await prompt_or_cancel("(anton) Enter a number")
-                if pick is None:
-                    return session
-                pick = (pick or "").strip()
-                try:
-                    engine_def = candidates[int(pick) - 1]
-                except (ValueError, IndexError):
-                    console.print("[anton.warning]Invalid choice. Aborting.[/]")
-                    console.print()
-                    return session
-
-        if engine_def is None:
-            engine_names = [e.display_name for e in all_engines]
-            try:
-                console.print()
-                console.print("[anton.muted]        Looking up datasource…[/]")
-                llm_resp = await session._llm.plan(
-                    system="You are a datasource identification assistant.",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": (
-                                f"The user typed: {stripped_answer!r}\n"
-                                f"Known datasources: {engine_names!r}\n\n"
-                                "If the user input clearly matches one of the known datasources, "
-                                "reply with EXACTLY: MATCH:<display_name>\n"
-                                "If it does NOT match any known datasource but you recognise it "
-                                "as a real service/tool, reply with EXACTLY: CUSTOM\n"
-                                "If you don't recognise it at all, reply with EXACTLY: UNKNOWN\n"
-                                "Reply with only one of those three forms, nothing else."
-                            ),
-                        }
-                    ],
-                    max_tokens=64,
-                )
-                llm_text = (llm_resp.content or "").strip()
-            except Exception:
-                llm_text = "UNKNOWN"
-
-            llm_recognised = llm_text == "CUSTOM" or llm_text.startswith("MATCH:")
-
-            if llm_text.startswith("MATCH:"):
-                matched_name = llm_text[len("MATCH:"):].strip()
-                matched_engine = next(
-                    (e for e in all_engines if e.display_name == matched_name), None
-                )
-                if matched_engine is not None:
-                    if matched_name.lower() != stripped_answer.lower():
-                        confirm = await prompt_or_cancel(
-                            f'(anton) Did you mean "{matched_name}"?',
-                            choices=["y", "n"], default="y",
-                        )
-                        if confirm is not None and confirm.strip().lower() == "y":
-                            engine_def = matched_engine
-                    else:
-                        engine_def = matched_engine
-
-            if engine_def is None:
-                custom_source = True
-
-    if custom_source:
-        _telemetry("ds_connect_attempt", engine=stripped_answer if not stripped_answer.isdigit() else "custom")
+    # Priority 3: custom fallback
+    if engine_def is None:
+        _telemetry("ds_connect_attempt", engine=stripped_answer)
         result = await handle_add_custom_datasource(
-            console, stripped_answer if not stripped_answer.isdigit() else "", registry, session,
-            known_service=llm_recognised,
+            console, stripped_answer, registry, session, known_service=False,
         )
         if result is None:
             return session
