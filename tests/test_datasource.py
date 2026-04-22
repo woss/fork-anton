@@ -2592,7 +2592,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=AsyncMock(side_effect=lambda *a, **kw: next(responses)),
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -2632,7 +2632,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=AsyncMock(side_effect=lambda *a, **kw: next(responses)),
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -2680,7 +2680,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=AsyncMock(side_effect=lambda *a, **kw: next(responses)),
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -2736,7 +2736,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=_prompt,
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -2799,7 +2799,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=_prompt,
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -2848,7 +2848,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=AsyncMock(side_effect=lambda *a, **kw: next(responses)),
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -2918,7 +2918,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=_prompt,
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -2975,7 +2975,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.show_credential_help",
                 new=_fake_help,
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -3025,7 +3025,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=AsyncMock(side_effect=lambda *a, **kw: next(responses)),
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -3096,7 +3096,7 @@ class TestAddCustomDatasourceFlow:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=AsyncMock(side_effect=lambda *a, **kw: next(responses)),
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_add_custom_datasource(
@@ -3306,7 +3306,7 @@ class TestCustomDatasourceRequiredFieldsPolicy:
                 "anton.commands.datasource.custom.prompt_or_cancel",
                 new=AsyncMock(side_effect=lambda *a, **kw: next(custom_responses)),
             ),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             mock_path_cls.return_value.expanduser.return_value = (
                 tmp_path / "datasources.md"
@@ -3403,7 +3403,7 @@ class TestCustomDatasourceConnectFlow:
             ),
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_connect_datasource(
@@ -3459,7 +3459,7 @@ class TestCustomDatasourceConnectFlow:
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.verify.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_connect_datasource(
@@ -3518,7 +3518,7 @@ class TestCustomDatasourceConnectFlow:
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.verify.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             result = await handle_connect_datasource(
@@ -3590,7 +3590,7 @@ class TestCustomDatasourceConnectFlow:
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.verify.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             await handle_connect_datasource(
@@ -3667,7 +3667,7 @@ class TestCustomDatasourceConnectFlow:
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.verify.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             await handle_connect_datasource(
@@ -3754,7 +3754,7 @@ class TestCustomDatasourceConnectFlow:
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.verify.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             await handle_connect_datasource(
@@ -3813,7 +3813,7 @@ class TestCustomDatasourceConnectFlow:
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.verify.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             await handle_connect_datasource(
@@ -3859,7 +3859,7 @@ class TestCustomDatasourceConnectFlow:
             ),
             patch("anton.commands.datasource.connect.prompt_or_cancel", new=poc),
             patch("anton.commands.datasource.custom.prompt_or_cancel", new=poc),
-            patch("anton.commands.datasource.custom.Path") as mock_path_cls,
+            patch("anton.utils.datasources.Path") as mock_path_cls,
         ):
             self._mock_ds_path(mock_path_cls, tmp_path)
             await handle_connect_datasource(console, session._scratchpads, session)

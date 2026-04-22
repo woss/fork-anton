@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import re
-import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
@@ -12,23 +10,13 @@ from pydantic import BaseModel, Field
 from anton.connect_collector import extract_variables
 from anton.commands.datasource.helpers import show_credential_help
 from anton.core.datasources.datasource_registry import DatasourceEngine, DatasourceField
-from anton.utils.datasources import remove_engine_block
+from anton.utils.datasources import persist_custom_engine
 from anton.utils.prompt import prompt_or_cancel
 
 if TYPE_CHECKING:
     from rich.console import Console
     from anton.chat import ChatSession
     from anton.core.datasources.datasource_registry import DatasourceRegistry
-
-
-def _force_all_fields_optional(engine_dict: dict) -> dict:
-    """Custom datasources never have required fields — enforce at save time."""
-    for f in engine_dict.get("fields", []):
-        f["required"] = False
-    for method in engine_dict.get("auth_methods", []):
-        for f in method.get("fields", []):
-            f["required"] = False
-    return engine_dict
 
 
 class _CustomDatasourceField(BaseModel):
@@ -332,67 +320,29 @@ async def handle_add_custom_datasource(
     ):
         return None
 
-    # Build engine slug and write definition to ~/.anton/datasources.md
-    slug = re.sub(r"[^\w]", "_", display_name.lower()).strip("_")
-    field_dicts: list[dict] = [
-        {
-            "name": f.name,
-            "required": f.required,
-            "secret": f.secret,
-            "description": f.description,
-        }
-        for f in fields
-    ]
-    _force_all_fields_optional({"fields": field_dicts, "auth_methods": []})
-    field_lines = "\n".join(
-        f"  - {{ name: {fd['name']}, required: {str(fd['required']).lower()}, "
-        f"secret: {str(fd['secret']).lower()}, description: \"{fd['description']}\" }}"
-        for fd in field_dicts
+    # Custom datasources never have required fields.
+    for f in fields:
+        f.required = False
+
+    engine_def = persist_custom_engine(
+        registry,
+        display_name,
+        fields,
+        test_snippet=test_snippet,
+        pip=pip_pkg,
     )
-    test_snippet_yaml = ""
-    if test_snippet:
-        indented = "\n".join(f"  {line}" for line in test_snippet.splitlines())
-        test_snippet_yaml = f"test_snippet: |\n{indented}\n"
-
-    yaml_block = (
-        f"\n---\n\n## {display_name}\n"
-        "```yaml\n"
-        f"engine: {slug}\n"
-        f"display_name: {display_name}\n"
-        + (f"pip: {pip_pkg}\n" if pip_pkg else "")
-        + f"fields:\n{field_lines}\n"
-        + test_snippet_yaml
-        + "```\n"
-    )
-    user_ds_path = Path("~/.anton/datasources.md").expanduser()
-    tmp_path = user_ds_path.with_suffix(".tmp")
-
-    existing = (
-        user_ds_path.read_text(encoding="utf-8") if user_ds_path.is_file() else ""
-    )
-    existing = remove_engine_block(existing, slug)
-
-    tmp_path.write_text(existing + yaml_block, encoding="utf-8")
-
-    parsed = registry.validate_file(tmp_path)
-    if slug in parsed:
-        shutil.move(str(tmp_path), str(user_ds_path))
-    else:
-        tmp_path.unlink(missing_ok=True)
+    if engine_def is None:
         console.print(
             "[anton.warning]Could not validate engine definition — "
             "credentials saved but engine not written to datasources.md.[/]"
         )
-
-    registry.reload()
-    engine_def = registry.get(slug)
-    if engine_def is None:
         engine_def = DatasourceEngine(
-            engine=slug,
+            engine=re.sub(r"[^\w]", "_", display_name.lower()).strip("_"),
             display_name=display_name,
             pip=pip_pkg,
             fields=fields,
             test_snippet=test_snippet,
+            custom=True,
         )
 
     return engine_def, credentials

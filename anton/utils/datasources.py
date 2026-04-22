@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import yaml
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from anton.core.datasources.data_vault import DataVault, LocalDataVault, _slug_env_prefix
 from anton.core.datasources.datasource_registry import DatasourceRegistry, _YAML_BLOCK_RE
 
 if TYPE_CHECKING:
-    from anton.core.datasources.datasource_registry import DatasourceEngine
+    from anton.core.datasources.datasource_registry import DatasourceEngine, DatasourceField
 
 # DS_* var names whose values are known to be secret (passwords, tokens, keys).
 # Populated at startup and after each successful connect.
@@ -164,6 +166,76 @@ def save_connection(
     restore_namespaced_env(vault)
     register_secret_vars(engine_def, engine=engine_def.engine, name=name)
     return f"{engine_def.engine}-{name}"
+
+
+def persist_custom_engine(
+    registry: DatasourceRegistry,
+    display_name: str,
+    fields: list["DatasourceField"],
+    test_snippet: str = "",
+    pip: str = "",
+) -> "DatasourceEngine | None":
+    """Append a YAML block for a custom engine to ``~/.anton/datasources.md``.
+
+    Reloads the registry and returns the parsed DatasourceEngine on success.
+    Returns None if the newly-written block fails parse validation (caller
+    may still fall back to an in-memory engine).
+    """
+    from anton.core.datasources.datasource_registry import DatasourceEngine
+
+    slug = re.sub(r"[^\w]", "_", display_name.lower()).strip("_")
+    field_lines = "\n".join(
+        f"  - {{ name: {f.name}, required: {str(f.required).lower()}, "
+        f"secret: {str(f.secret).lower()}, "
+        f"description: \"{f.description}\" }}"
+        for f in fields
+    )
+    test_snippet_yaml = ""
+    if test_snippet:
+        indented = "\n".join(f"  {line}" for line in test_snippet.splitlines())
+        test_snippet_yaml = f"test_snippet: |\n{indented}\n"
+
+    yaml_block = (
+        f"\n---\n\n## {display_name}\n"
+        "```yaml\n"
+        f"engine: {slug}\n"
+        f"display_name: {display_name}\n"
+        + (f"pip: {pip}\n" if pip else "")
+        + f"fields:\n{field_lines}\n"
+        + test_snippet_yaml
+        + "```\n"
+    )
+    user_ds_path = Path("~/.anton/datasources.md").expanduser()
+    tmp_path = user_ds_path.with_suffix(".tmp")
+
+    existing = (
+        user_ds_path.read_text(encoding="utf-8")
+        if user_ds_path.is_file()
+        else ""
+    )
+    existing = remove_engine_block(existing, slug)
+
+    user_ds_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path.write_text(existing + yaml_block, encoding="utf-8")
+
+    parsed = registry.validate_file(tmp_path)
+    if slug not in parsed:
+        tmp_path.unlink(missing_ok=True)
+        return None
+
+    shutil.move(str(tmp_path), str(user_ds_path))
+    registry.reload()
+    engine_def = registry.get(slug)
+    if engine_def is None:
+        engine_def = DatasourceEngine(
+            engine=slug,
+            display_name=display_name,
+            pip=pip,
+            fields=list(fields),
+            test_snippet=test_snippet,
+            custom=True,
+        )
+    return engine_def
 
 
 def remove_engine_block(text: str, slug: str) -> str:
