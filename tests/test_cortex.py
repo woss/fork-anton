@@ -127,6 +127,21 @@ class TestOrphanedIdentityMigration:
         assert "TZ: PST" in merged
         assert not (p / "profile.md").exists()
 
+    def test_migration_does_not_overwrite_fresh_global_entries(self, dirs):
+        # Orphaned project data is likely stale (old bug wrote it, user may
+        # have since corrected to global). Global must win on key conflicts.
+        g, p = dirs
+        Hippocampus(g).rewrite_identity(["Name: Alejandro"])
+        Hippocampus(p).rewrite_identity(["Name: Alec", "TZ: PST"])
+
+        Cortex(global_hc=Hippocampus(g), project_hc=Hippocampus(p), mode="copilot")
+
+        merged = (g / "profile.md").read_text()
+        assert "Name: Alejandro" in merged
+        assert "Name: Alec" not in merged
+        assert "TZ: PST" in merged  # non-conflicting keys still migrate
+        assert not (p / "profile.md").exists()
+
     def test_migration_noop_when_project_identity_empty(self, dirs):
         g, p = dirs
         Cortex(global_hc=Hippocampus(g), project_hc=Hippocampus(p), mode="copilot")

@@ -131,9 +131,26 @@ class Cortex:
 
         # One-time migration: identity is singular and global. Any entries that
         # landed in project scope from the old encode() bug are merged upward.
+        # Global wins on key conflicts — orphaned entries are likely stale
+        # (the bug wrote them; the user may have since corrected to global),
+        # so we only import keys that don't already exist globally.
         orphaned = [e.text for e in self.project_hc.get_identities()]
         if orphaned:
-            self.global_hc.rewrite_identity(orphaned)
+            existing_global_keys = {
+                e.text.split(":", 1)[0].strip().lower()
+                for e in self.global_hc.get_identities()
+                if ":" in e.text
+            }
+            to_migrate = [
+                fact
+                for fact in orphaned
+                if not (
+                    ":" in fact
+                    and fact.split(":", 1)[0].strip().lower() in existing_global_keys
+                )
+            ]
+            if to_migrate:
+                self.global_hc.rewrite_identity(to_migrate)
             self.project_hc.clear_identity()
 
     # ~6000 chars ≈ ~1500 tokens — above this, use LLM to filter rules
