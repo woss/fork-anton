@@ -9,7 +9,7 @@
 
 # Meet Anton 
 
-Anton is a self-improving AI agent you can hand off any task to; Create and send reports, clear your inbox, send emails, manage your calendar, CRM,  book flights, etc. An open, powerful alternative to Claude-Cowork that you can run anywhere and use with any model you want — OpenRouter (200+ models), NVIDIA Nemotron, z.ai/GLM, Kimi/Moonshot, MiniMax, OpenAI, Anthropic or your own endpoint.
+Anton is a self-improving AI agent you can hand off any task to; Create and send reports, clear your inbox, send emails, manage your calendar, CRM,  book flights, etc. An open, powerful alternative to Claude-Cowork that you can run anywhere and use with any model you want — OpenAI, Anthropic, OpenRouter (200+ models), NVIDIA Nemotron, z.ai/GLM, Kimi/Moonshot, MiniMax, or your own endpoint.
 
 
 ## Quick Install
