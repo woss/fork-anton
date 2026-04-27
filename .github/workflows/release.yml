@@ -1,7 +1,7 @@
 name: Auto-release on version bump
 
 permissions:
-  contents: read
+  contents: write
 
 on:
   push:
@@ -10,9 +10,16 @@ on:
       - 'anton/__init__.py'
   workflow_dispatch:
 
+concurrency:
+  group: auto-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   auto-release:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      created: ${{ steps.tag_check.outputs.exists == 'false' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,22 +48,21 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Mint release token
-        if: steps.tag_check.outputs.exists == 'false'
-        id: app_token
-        uses: actions/create-github-app-token@v1
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-
       - name: Create tag and GitHub release
         if: steps.tag_check.outputs.exists == 'false'
         env:
-          GH_TOKEN: ${{ steps.app_token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release create "${TAG}" \
             --target "${GITHUB_SHA}" \
             --title "${TAG}" \
             --generate-notes
+
+  e2e:
+    needs: auto-release
+    if: needs.auto-release.outputs.created == 'true'
+    uses: ./.github/workflows/tests_e2e_release.yml
+    with:
+      tag: ${{ needs.auto-release.outputs.tag }}
+    secrets: inherit
